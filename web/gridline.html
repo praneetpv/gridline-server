@@ -768,7 +768,7 @@
   }
   function mapTransformerFromServer(row){
     return {
-      id: row.id, name: row.name, capacity: row.capacity_kva != null ? row.capacity_kva : 0,
+      id: row.id, name: row.name, capacity: row.capacity_kva != null ? Number(row.capacity_kva) : 0,
       poleName: row.pole_name || '', loadR: row.load_r != null ? row.load_r : '',
       loadY: row.load_y != null ? row.load_y : '', loadB: row.load_b != null ? row.load_b : '',
       loadCapturedAt: row.load_captured_at || '', lastFaultDate: row.last_fault_date || '',
@@ -2684,7 +2684,7 @@
     document.getElementById('stat-split').textContent = splitCount;
     document.getElementById('stat-tap').textContent = tapCount;
     document.getElementById('stat-tx').textContent = state.transformers.length;
-    const kva = state.transformers.reduce((a,t)=>a+(t.capacity||0),0);
+    const kva = state.transformers.reduce((a,t)=>a+(Number(t.capacity)||0),0);
     document.getElementById('stat-kva').textContent = kva.toLocaleString();
     // Simple sum of every R/Y/B phase amp reading entered across all transformers (whatever's
     // been captured for the day) — not a per-phase breakdown, just one running total.
