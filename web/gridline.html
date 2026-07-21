@@ -3586,6 +3586,15 @@
   const savedFileHandles = { realtime: null, simulator: null };
 
   async function saveCurrentViewToExcel(){
+    if(activeView === 'realtime'){
+      // Every Realtime mutation (toggle, add, delete) already writes straight to the shared
+      // backend/database the instant it happens — there's no local edit buffer here to flush to a
+      // file the way Simulator has. Writing an Excel file on "Save" would just be a stale, redundant
+      // snapshot, so this is a no-op with an explanatory message instead. Export Excel still works
+      // for Realtime if you want an actual point-in-time backup file.
+      showImportStatus('Realtime changes save automatically to the database as you make them — nothing to save here. Use Export Excel for a point-in-time backup file.', false);
+      return;
+    }
     const viewFilename = (activeView === 'realtime' ? 'RealtimeView' : 'SimulatorView') + '.xlsx';
     const wb = buildWorkbookFromState(state);
 
