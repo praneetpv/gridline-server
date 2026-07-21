@@ -1,0 +1,3645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>GRIDLINE — Distribution Network Builder</title>
+<style>
+  :root{
+    --bg:#0A0E11;
+    --panel:#12171B;
+    --panel-2:#161C20;
+    --border:#1E262B;
+    --text:#E8EEF1;
+    --muted:#7E8A91;
+    --teal:#3FD6C0;
+    --blue:#5C93FF;
+    --amber:#F0B429;
+    --violet:#A78BFA;
+    --danger:#F2657A;
+    --interlink:#94A3B8;
+    --split:#22D3EE;
+    --tap:#FB923C;
+    --live:#3DD68C;
+    --isolated:#5AA9E6;
+    --backfeed:#E5484D;
+    --feeder-off:#4B5560;
+    --disabled:#5B6670;
+    --panel-translucent: rgba(18,23,27,.92);
+    --grid-dot: #161C20;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, Menlo, monospace;
+    --sans: -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  /* Light theme — a soft grayish palette rather than stark white, toggled via the header button.
+     The accent colors below are darker/more saturated than their dark-theme counterparts on
+     purpose: the bright, glowing versions read well on a near-black canvas but wash out and lose
+     contrast against a light gray background, so each gets its own light-mode-tuned value here. */
+  html[data-theme="light"]{
+    --bg:#EEF0F2;
+    --panel:#FFFFFF;
+    --panel-2:#F5F6F8;
+    --border:#D7DBE0;
+    --text:#1B2126;
+    --muted:#616B74;
+    --teal:#0E8E7A;
+    --blue:#2F5FD1;
+    --amber:#A8710A;
+    --violet:#6236C9;
+    --danger:#C22A45;
+    --interlink:#5B6B7D;
+    --split:#0B7285;
+    --tap:#B65C0E;
+    --live:#1E9E63;
+    --isolated:#1B5FA8;
+    --backfeed:#C6273A;
+    --feeder-off:#5B6670;
+    --disabled:#8993A0;
+    --panel-translucent: rgba(255,255,255,.9);
+    --grid-dot: #DDE1E5;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  html, body, #app, header, #view-tabs, #sidebar, #canvas-wrap, #inspector, #drawer, #legend, .feeder-chip, #feeder-modal, table{
+    transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+  }
+  html[data-theme="light"] ::-webkit-scrollbar-thumb{background:#C7CCD2;}
+  #app{display:flex;flex-direction:column;height:100vh;min-height:600px;}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 20px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg, var(--panel-2), var(--panel));
+    flex-shrink:0;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand h1{
+    font-family:var(--mono);font-size:15px;letter-spacing:.28em;font-weight:600;
+    margin:0;color:var(--text);
+  }
+  .brand h1 span{color:var(--teal);}
+  .brand small{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;}
+  .stats{display:flex;gap:18px;font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .stats b{color:var(--text);font-size:13px;display:block;font-weight:600;}
+  .stats div{text-align:right;}
+
+  /* ---------- view tabs ---------- */
+  #view-tabs{
+    display:flex;align-items:center;gap:8px;padding:10px 20px;
+    background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;
+  }
+  #view-tab-spacer{flex:1;}
+  .view-tab{
+    display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;font-weight:600;
+    letter-spacing:.04em;padding:8px 14px;border-radius:7px;border:1px solid var(--border);
+    background:var(--panel-2);color:var(--muted);cursor:pointer;transition:filter .15s, background .15s, color .15s;
+  }
+  .view-tab:hover{filter:brightness(1.15);}
+  .view-tab.active{color:var(--text);}
+  .view-tab[data-view="realtime"].active{border-color:var(--teal);background:rgba(63,214,192,.12);color:var(--teal);}
+  .view-tab[data-view="simulator"].active{border-color:var(--violet);background:rgba(167,139,250,.12);color:var(--violet);}
+  .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;}
+
+  /* ---------- top bar entity search ---------- */
+  #entity-search-wrap{position:relative;flex:0 1 260px;min-width:150px;}
+  #entity-search-input{
+    width:100%;padding:8px 12px;border-radius:7px;border:1px solid var(--border);
+    background:var(--panel-2);color:var(--text);font-family:var(--sans);font-size:12.5px;
+    outline:none;box-sizing:border-box;
+  }
+  #entity-search-input::placeholder{color:var(--muted);}
+  #entity-search-input:focus{border-color:var(--teal);}
+  #entity-search-results{
+    position:absolute;top:calc(100% + 6px);left:0;right:0;
+    background:var(--panel);border:1px solid var(--border);border-radius:8px;
+    max-height:340px;overflow-y:auto;z-index:50;display:none;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #entity-search-results.open{display:block;}
+  #entity-search-results .result-item{
+    display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:12.5px;
+    border-bottom:1px solid var(--border);
+  }
+  #entity-search-results .result-item:last-child{border-bottom:none;}
+  #entity-search-results .result-item:hover, #entity-search-results .result-item.active{background:var(--panel-2);}
+  #entity-search-results .result-badge{
+    font-family:var(--mono);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    padding:2px 6px;border-radius:4px;flex-shrink:0;white-space:nowrap;
+  }
+  #entity-search-results .result-label{color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #entity-search-results .result-sub{color:var(--muted);font-size:11px;flex-shrink:0;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #entity-search-results .empty{padding:10px 12px;color:var(--muted);font-size:12px;}
+  .view-tab[data-view="realtime"].active .pulse-dot{
+    background:var(--teal);box-shadow:0 0 0 0 rgba(63,214,192,.6);
+    animation:pulse 1.6s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(63,214,192,.6);}
+    70%{box-shadow:0 0 0 6px rgba(63,214,192,0);}
+    100%{box-shadow:0 0 0 0 rgba(63,214,192,0);}
+  }
+  .sim-icon{font-size:13px;line-height:1;}
+
+  /* ---------- layout ---------- */
+  #body{display:flex;flex:1;min-height:0;}
+  #sidebar{
+    width:300px;flex-shrink:0;border-right:1px solid var(--border);
+    background:var(--panel);overflow-y:auto;padding:16px;
+  }
+  #main{flex:1;display:flex;flex-direction:column;min-width:0;}
+  #section-heading{
+    flex-shrink:0;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--panel-2);
+    font-family:var(--sans);font-size:16px;font-weight:700;color:var(--text);letter-spacing:.01em;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none;
+    transition:padding .15s ease, font-size .15s ease;
+  }
+  #section-heading.collapsed{padding:4px 20px;font-size:11px;font-weight:500;color:var(--muted);}
+  #section-heading .chev{
+    font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0;
+  }
+  #canvas-wrap{flex:1;overflow:auto;background:
+      radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0) 0 0/22px 22px, var(--bg);
+    position:relative;
+  }
+  #legend{
+    position:sticky;top:12px;left:12px;display:inline-flex;flex-direction:column;gap:8px;
+    background:var(--panel-translucent);border:1px solid var(--border);border-radius:8px;
+    padding:8px 12px;margin:12px;font-family:var(--mono);font-size:10px;color:var(--muted);
+    backdrop-filter:blur(4px);max-width:640px;
+  }
+  #legend .legend-header{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;user-select:none;
+  }
+  #legend .legend-header .legend-title{
+    font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:9.5px;color:var(--text);
+  }
+  #legend .legend-header .chev{font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0;}
+  #legend .legend-items{display:flex;flex-wrap:wrap;gap:10px 14px;}
+  #legend .item{display:flex;align-items:center;gap:6px;}
+  #legend svg{flex-shrink:0;}
+
+  /* ---------- sidebar sections ---------- */
+  .section{margin-bottom:20px;}
+  .section-title{
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);
+    text-transform:uppercase;margin:0 0 10px 0;display:flex;align-items:center;gap:6px;
+  }
+  .section-title::before{content:"";width:6px;height:6px;background:var(--teal);border-radius:1px;flex-shrink:0;}
+  label{display:block;font-size:11px;color:var(--muted);margin:10px 0 4px;font-family:var(--mono);}
+  input[type=text], input[type=number], select{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    padding:7px 9px;border-radius:6px;font-size:13px;font-family:var(--sans);outline:none;
+  }
+  input:focus, select:focus{border-color:var(--teal);}
+  input[type=checkbox]{width:auto;margin-right:6px;}
+  .checkbox-row{display:flex;align-items:center;font-size:12px;color:var(--text);margin-top:12px;font-family:var(--sans);}
+  button{
+    font-family:var(--sans);font-size:12.5px;font-weight:600;border:none;border-radius:6px;
+    padding:9px 14px;cursor:pointer;transition:filter .15s;
+  }
+  button:hover{filter:brightness(1.12);}
+  button:active{filter:brightness(0.92);}
+  .btn-primary{background:var(--teal);color:#04201C;width:100%;margin-top:14px;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+  .btn-danger{background:transparent;color:var(--danger);border:1px solid rgba(242,101,122,.35);padding:4px 8px;font-size:11px;}
+  .feeder-chip{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    background:var(--panel-2);border:1px solid var(--border);border-radius:6px;
+    padding:7px 10px;margin-bottom:6px;font-size:12.5px;
+  }
+  .feeder-chip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .feeder-chip .name{flex:1;font-family:var(--mono);}
+  .empty-hint{color:var(--muted);font-size:11.5px;line-height:1.5;font-family:var(--sans);}
+  .transformer-fields{
+    border-left:2px solid rgba(167,139,250,.4);padding-left:10px;margin-top:8px;
+  }
+
+  /* ---------- data drawer ---------- */
+  #drawer{border-top:1px solid var(--border);background:var(--panel);flex-shrink:0;}
+  #drawer-header{
+    display:flex;align-items:center;justify-content:space-between;padding:9px 18px;
+    cursor:pointer;user-select:none;
+  }
+  #drawer-header .section-title{margin:0;}
+  #drawer-header .chev{color:var(--muted);font-family:var(--mono);font-size:11px;transition:transform .15s;}
+  #drawer-body{max-height:220px;overflow-y:auto;padding:0 18px 14px;display:none;}
+  table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono);}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10.5px;font-family:var(--mono);}
+  .tag-ab{background:rgba(92,147,255,.14);color:var(--blue);}
+  .tag-rmu{background:rgba(240,180,41,.14);color:var(--amber);}
+  .tag-split{background:rgba(34,211,238,.14);color:var(--split);}
+  .tag-tap{background:rgba(251,146,60,.14);color:var(--tap);}
+
+  /* ---------- inspector ---------- */
+  /* position:fixed (viewport-relative) rather than absolute (canvas-relative) so this stays
+     on screen when a big network is scrolled far from the canvas's top-left. JS sets the
+     exact "top" inline (see positionInspector()) to sit just below the header/tabs. */
+  #inspector{
+    position:fixed;top:110px;right:16px;width:230px;background:var(--panel-translucent);
+    border:1px solid var(--border);border-radius:8px;padding:14px;display:none;
+    font-family:var(--mono);font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.4);
+    max-height:calc(100vh - 140px);overflow-y:auto;z-index:10;
+  }
+  #inspector h3{margin:0 0 8px;font-size:13px;color:var(--text);font-family:var(--sans);font-weight:600;}
+  #inspector .row{display:flex;justify-content:space-between;margin:4px 0;color:var(--muted);}
+  #inspector .row b{color:var(--text);font-weight:500;}
+  #inspector .close{position:absolute;top:8px;right:10px;cursor:pointer;color:var(--muted);font-size:14px;}
+
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:#232B31;border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  /* ---------- feeder edit modal ---------- */
+  #feeder-modal-backdrop{
+    position:fixed;inset:0;background:rgba(6,9,11,.6);z-index:50;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #feeder-modal{
+    width:360px;max-height:82vh;overflow-y:auto;background:var(--panel);
+    border:1px solid var(--border);border-radius:10px;padding:20px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);position:relative;
+  }
+  #feeder-modal h2{margin:0 0 4px;font-size:15px;font-family:var(--sans);font-weight:600;}
+  #feeder-modal .modal-sub{color:var(--muted);font-size:11px;font-family:var(--mono);margin-bottom:14px;}
+  #feeder-modal .close{position:absolute;top:14px;right:16px;cursor:pointer;color:var(--muted);font-size:16px;}
+  #feeder-modal .modal-actions{display:flex;gap:8px;margin-top:16px;}
+  #feeder-modal .modal-actions button{flex:1;}
+  #feeder-modal .btn-secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--border);}
+
+  /* ---------- mobile menu button + sidebar backdrop (hidden on desktop) ---------- */
+  #mobile-menu-btn{
+    display:none;align-items:center;justify-content:center;gap:0;
+    width:34px;height:34px;border-radius:7px;border:1px solid var(--border);
+    background:var(--panel-2);color:var(--text);font-size:16px;cursor:pointer;flex-shrink:0;
+  }
+  #sidebar-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(6,9,11,.6);z-index:44;
+  }
+
+  /* ---------- full-screen diagram toggle (desktop only; mobile already hides the panel by default) ---------- */
+  @media (min-width: 861px){
+    #app.sidebar-collapsed #sidebar{display:none;}
+  }
+
+  /* ---------- diagram zoom controls ---------- */
+  /* position:fixed (viewport-relative) — JS (positionZoomControls) keeps bottom/right pinned to
+     the visible bottom-right corner of #canvas-wrap, so this doesn't scroll away with big networks. */
+  #zoom-controls{
+    position:fixed;bottom:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:5;
+  }
+  #zoom-controls button{
+    width:34px;height:34px;border-radius:7px;border:1px solid var(--border);
+    background:var(--panel-translucent);color:var(--text);font-family:var(--mono);font-size:15px;
+    font-weight:600;cursor:pointer;backdrop-filter:blur(4px);padding:0;
+  }
+  #zoom-controls button:hover{filter:brightness(1.2);}
+  #zoom-controls button.active{background:var(--teal);color:var(--panel);border-color:transparent;}
+
+  /* =====================================================================
+     MOBILE / NARROW SCREEN LAYOUT
+     ===================================================================== */
+  @media (max-width: 860px){
+    header{padding:10px 12px;gap:10px;}
+    .brand h1{font-size:13px;}
+    .brand small{display:none;}
+    .stats{
+      gap:12px;overflow-x:auto;max-width:46vw;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none;
+    }
+    .stats::-webkit-scrollbar{display:none;}
+    .stats div{min-width:52px;}
+    .stats b{font-size:12px;}
+
+    #mobile-menu-btn{display:flex;}
+
+    #view-tabs{padding:8px 10px;gap:6px;flex-wrap:wrap;}
+    .view-tab{padding:8px 10px;font-size:11px;}
+    #import-status{display:none;}
+    #import-excel-btn, #export-excel-btn, #save-excel-btn, #theme-toggle-btn{padding:8px 10px;font-size:11px;}
+    #toggle-sidebar-btn{display:none;} /* the hamburger menu already gives full-screen diagram viewing on mobile */
+
+    #body{position:relative;}
+
+    #sidebar{
+      position:fixed;top:0;left:0;bottom:0;width:86vw;max-width:320px;
+      transform:translateX(-100%);transition:transform .25s ease;z-index:45;
+      box-shadow:8px 0 32px rgba(0,0,0,.5);padding-bottom:24px;
+    }
+    #sidebar.open{transform:translateX(0);}
+    #sidebar-backdrop.open{display:block;}
+
+    #main{width:100%;}
+
+    /* touch-friendlier tap targets */
+    button, .view-tab, .feeder-chip .btn-danger{min-height:40px;}
+    input[type=text], input[type=number], select, input[type=datetime-local]{
+      min-height:38px;font-size:14px;
+    }
+
+    /* inspector becomes a bottom sheet */
+    #inspector{
+      position:fixed;top:auto;left:0;right:0;bottom:0;width:100%;
+      max-height:78vh;overflow-y:auto;border-radius:16px 16px 0 0;
+      padding:18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+      box-shadow:0 -8px 32px rgba(0,0,0,.5);
+    }
+    #inspector button{min-height:44px;}
+
+    #feeder-modal{max-width:92vw;width:92vw;}
+
+    /* line register table scrolls horizontally instead of squeezing */
+    #drawer-body{overflow-x:auto;}
+    #drawer-body table{min-width:640px;}
+
+    #legend{max-width:calc(100vw - 24px);font-size:9.5px;}
+    #section-heading{padding:10px 14px;font-size:14px;}
+
+    #zoom-controls button{width:40px;height:40px;font-size:17px;}
+  }
+
+  /* =====================================================================
+     PRINT / SAVE-AS-PDF LAYOUT
+     Prints only the section heading, legend, and the full network diagram
+     — everything else (toolbar, sidebar, inspector, zoom controls, search
+     dropdown) is hidden. Colors are forced to a fixed light/high-contrast
+     set regardless of the on-screen theme, and the flex/fixed-height/
+     scrolling layout used on screen is unwound to plain document flow so
+     the whole diagram can flow across as many printed pages as it needs,
+     scaled to the page width via the SVG's own viewBox.
+     ===================================================================== */
+  @media print{
+    :root, html[data-theme="light"]{
+      --bg:#FFFFFF; --panel:#FFFFFF; --panel-2:#F4F5F7; --border:#C7CCD2; --text:#14181C; --muted:#4B5560;
+      --teal:#0E8E7A; --blue:#2F5FD1; --amber:#A8710A; --violet:#6236C9; --danger:#C22A45;
+      --interlink:#5B6B7D; --split:#0B7285; --tap:#B65C0E; --live:#1E9E63; --isolated:#1B5FA8; --backfeed:#C6273A;
+      --feeder-off:#5B6670; --disabled:#8993A0; --panel-translucent:#FFFFFF; --grid-dot:#FFFFFF;
+    }
+    #mobile-menu-btn, #view-tabs, #sidebar, #sidebar-backdrop, #zoom-controls, #inspector,
+    #feeder-modal-backdrop, #drawer, #entity-search-results{ display:none !important; }
+
+    html, body{ background:#fff !important; height:auto !important; }
+    #app, #body, #main{ display:block !important; height:auto !important; overflow:visible !important; }
+    header{ position:static !important; box-shadow:none !important; }
+    #section-heading{ position:static !important; }
+    #canvas-wrap{
+      display:block !important; position:static !important; height:auto !important;
+      overflow:visible !important; width:100% !important; background:#fff !important;
+    }
+    #legend{ position:static !important; display:inline-flex !important; }
+    #legend-items{ display:flex !important; } /* force-expand even if collapsed on screen */
+    svg#diagram{ width:100% !important; height:auto !important; max-width:none !important; max-height:none !important; }
+
+    *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button id="mobile-menu-btn" aria-label="Open menu">☰</button>
+    <div class="brand">
+      <h1>GRID<span>LINE</span></h1>
+      <small>DISTRIBUTION NETWORK BUILDER</small>
+    </div>
+    <div class="stats">
+      <div><b id="stat-feeders">0</b>feeders</div>
+      <div><b id="stat-lines">0</b>HT lines</div>
+      <div><b id="stat-ab">0</b>AB</div>
+      <div><b id="stat-rmu">0</b>RMU</div>
+      <div><b id="stat-split">0</b>splits</div>
+      <div><b id="stat-tap">0</b>taps</div>
+      <div><b id="stat-tx">0</b>transformers</div>
+      <div><b id="stat-kva">0</b>kVA connected</div>
+      <div><b id="stat-amps">0</b>total load (A)</div>
+    </div>
+  </header>
+
+  <div id="view-tabs">
+    <button class="view-tab" id="tab-realtime" data-view="realtime">
+      <span class="pulse-dot"></span> Real Time View
+    </button>
+    <button class="view-tab" id="tab-simulator" data-view="simulator">
+      <span class="sim-icon">⧉</span> Simulator
+    </button>
+    <span id="backend-status" style="display:none;font-family:var(--mono);font-size:11px;margin-left:6px;white-space:nowrap;" title="GRIDLINE backend connection status"></span>
+
+    <div id="entity-search-wrap">
+      <input type="text" id="entity-search-input" placeholder="Search lines, AB, RMU, interlink, transformer…" autocomplete="off">
+      <div id="entity-search-results"></div>
+    </div>
+
+    <div id="view-tab-spacer"></div>
+    <button class="btn-ghost" id="backend-logout-btn" style="display:none;" title="Sign out of the GRIDLINE backend">⎋ Log out</button>
+    <button class="btn-ghost" id="theme-toggle-btn" title="Switch to a light grayish background">☀️ Light mode</button>
+    <button class="btn-ghost" id="toggle-sidebar-btn" title="Hide the left panel for a full-screen diagram">⛶ Full Screen</button>
+    <span id="import-status" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:4px;"></span>
+    <button class="btn-ghost" id="import-excel-btn">⇪ Import Excel</button>
+    <button class="btn-primary" style="width:auto;margin-top:0;padding:8px 14px;" id="save-excel-btn">💾 Save</button>
+    <button class="btn-ghost" id="export-excel-btn">⇩ Export Excel</button>
+    <button class="btn-ghost" id="print-btn" title="Print the network diagram, or choose 'Save as PDF' in the print dialog">🖨️ Print</button>
+    <input type="file" id="import-excel-input" accept=".xlsx,.xls" style="display:none;">
+  </div>
+
+  <div id="body">
+    <div id="sidebar-backdrop"></div>
+    <div id="sidebar">
+
+      <div class="section">
+        <p class="section-title">Add feeder</p>
+        <label>Feeder / source name</label>
+        <input type="text" id="feeder-name" placeholder="e.g. 11kV Feeder-3">
+        <p class="empty-hint" id="feeder-name-error" style="display:none;color:var(--danger);margin-top:4px;"></p>
+        <label>Voltage (kV)</label>
+        <input type="number" id="feeder-kv" placeholder="e.g. 11" step="0.1">
+        <label>Location identification</label>
+        <input type="text" id="feeder-location" placeholder="e.g. Substation-4, Bay 2">
+        <label>Nearest point of contact (dept.)</label>
+        <input type="text" id="feeder-poc" placeholder="e.g. O&M Circle-2, J. Menon">
+        <label>Known risks / remarks</label>
+        <input type="text" id="feeder-risks" placeholder="e.g. Tree overgrowth near tower 14">
+        <label>Last tripped</label>
+        <input type="datetime-local" id="feeder-last-tripped">
+        <button class="btn-primary" id="add-feeder-btn">+ Add feeder</button>
+        <div id="feeder-list" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Add HT line + breaker</p>
+        <label>Feeder</label>
+        <select id="line-feeder"></select>
+
+        <label>Line starts from</label>
+        <select id="line-from"></select>
+
+        <div id="bay-row" style="display:none;">
+          <label>New bay state at RMU</label>
+          <select id="bay-state">
+            <option value="Closed">Closed</option>
+            <option value="Open">Open</option>
+          </select>
+        </div>
+
+        <label>Line name (optional)</label>
+        <input type="text" id="line-name" placeholder="auto: L1, L2...">
+
+        <label>Line ends at — new point name (optional)</label>
+        <input type="text" id="node-name" placeholder="auto: N1, N2...">
+
+        <label>Point type</label>
+        <select id="breaker-type">
+          <option value="AB">AB — Air Break switch</option>
+          <option value="RMU">RMU — Ring Main Unit</option>
+          <option value="Split">Split — fixed joint (creates a loop point)</option>
+          <option value="Tap">Tap — branch off AB/RMU/Split</option>
+        </select>
+
+        <div class="checkbox-row" id="tx-row" style="display:none;">
+          <input type="checkbox" id="tx-attach">
+          <label style="margin:0;color:var(--text);">Transformer connected</label>
+        </div>
+        <div class="transformer-fields" id="tx-fields" style="display:none;">
+          <label>Transformer name</label>
+          <input type="text" id="tx-name" placeholder="auto: T1, T2...">
+          <label>Capacity (kVA)</label>
+          <input type="number" id="tx-kva" placeholder="e.g. 250">
+          <label>Electrical pole name</label>
+          <input type="text" id="tx-pole" placeholder="e.g. Pole-14A">
+          <label>Load — R / Y / B phase (A)</label>
+          <div style="display:flex;gap:6px;">
+            <input type="number" id="tx-load-r" placeholder="R" style="flex:1;min-width:0;">
+            <input type="number" id="tx-load-y" placeholder="Y" style="flex:1;min-width:0;">
+            <input type="number" id="tx-load-b" placeholder="B" style="flex:1;min-width:0;">
+          </div>
+          <label>Load reading captured at</label>
+          <input type="datetime-local" id="tx-load-captured">
+          <label>Last fault date/time</label>
+          <input type="datetime-local" id="tx-fault-date">
+          <label>Last fault reason</label>
+          <input type="text" id="tx-fault-reason" placeholder="e.g. Lightning surge">
+        </div>
+
+        <button class="btn-primary" id="add-line-btn">+ Add line</button>
+        <p class="empty-hint" id="line-hint" style="margin-top:10px;"></p>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Close a ring (interlink line)</p>
+        <p class="empty-hint" style="margin-bottom:10px;">Connects two existing breakers — often across feeders — to close a ring. No new node is created.</p>
+        <label>Node A</label>
+        <select id="interlink-node-a"></select>
+        <label>Node B</label>
+        <select id="interlink-node-b"></select>
+        <label>Interlink name (optional)</label>
+        <input type="text" id="interlink-name" placeholder="auto: INTERLINK1, INTERLINK2...">
+        <div class="checkbox-row" id="interlink-switchable-row">
+          <input type="checkbox" id="interlink-switchable">
+          <label style="margin:0;color:var(--text);">This interlink has its own physical switch</label>
+        </div>
+        <p class="empty-hint" style="margin:4px 0 0;">Leave unchecked for the normal case in India — the ring is maintained by operating the AB switches at each end, with no intermediate switch on the interlink itself. All interlinks load Closed; check this only for the rare interlink that really does have its own switch, so it can be opened/closed independently.</p>
+        <div id="interlink-switch-fields" style="display:none;">
+          <label>Switch type</label>
+          <select id="interlink-breaker-type">
+            <option value="AB">AB — Air Break switch</option>
+            <option value="RMU">RMU — Ring Main Unit</option>
+          </select>
+          <label>Normal state</label>
+          <select id="interlink-state">
+            <option value="NC">Normally Closed (NC)</option>
+            <option value="NO">Normally Open (NO)</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="add-interlink-btn">+ Add ring interlink</button>
+        <p class="empty-hint" id="interlink-hint" style="margin-top:10px;"></p>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Transformers along a line</p>
+        <p class="empty-hint" style="margin-bottom:10px;">Distribution transformers tapped off an HT line between its start and end — separate from a transformer sitting on an RMU.</p>
+        <label>Line</label>
+        <select id="linetx-line"></select>
+
+        <label>Transformer name</label>
+        <input type="text" id="linetx-name" placeholder="auto: T1, T2...">
+        <label>Capacity (kVA)</label>
+        <input type="number" id="linetx-kva" placeholder="e.g. 100">
+        <label>Electrical pole name</label>
+        <input type="text" id="linetx-pole" placeholder="e.g. Pole-22B">
+        <label>Load — R / Y / B phase (A)</label>
+        <div style="display:flex;gap:6px;">
+          <input type="number" id="linetx-load-r" placeholder="R" style="flex:1;min-width:0;">
+          <input type="number" id="linetx-load-y" placeholder="Y" style="flex:1;min-width:0;">
+          <input type="number" id="linetx-load-b" placeholder="B" style="flex:1;min-width:0;">
+        </div>
+        <label>Load reading captured at</label>
+        <input type="datetime-local" id="linetx-load-captured">
+        <label>Last fault date/time</label>
+        <input type="datetime-local" id="linetx-fault-date">
+        <label>Last fault reason</label>
+        <input type="text" id="linetx-fault-reason" placeholder="e.g. Overload trip">
+        <button class="btn-primary" id="add-linetx-btn">+ Add transformer to line</button>
+        <p class="empty-hint" id="linetx-hint" style="margin-top:10px;"></p>
+
+        <div id="linetx-list" style="margin-top:12px;"></div>
+      </div>
+
+    </div>
+
+    <div id="main">
+      <div id="section-heading" style="display:none;" title="Click to collapse or expand">
+        <span id="section-heading-text"></span>
+        <span class="chev" id="section-heading-chev">▾ collapse</span>
+      </div>
+      <div id="canvas-wrap">
+        <div id="legend"></div>
+        <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="inspector"></div>
+        <div id="zoom-controls">
+          <button id="zoom-in" aria-label="Zoom in">+</button>
+          <button id="zoom-out" aria-label="Zoom out">−</button>
+          <button id="zoom-reset" aria-label="Reset zoom" style="font-size:11px;">⤢</button>
+          <button id="fit-toggle" aria-label="Fit whole network to screen" aria-pressed="false" title="Fit whole network to screen" style="font-size:15px;">⛶</button>
+        </div>
+      </div>
+
+      <div id="feeder-modal-backdrop" style="display:none;">
+        <div id="feeder-modal"></div>
+      </div>
+
+      <div id="drawer">
+        <div id="drawer-header">
+          <p class="section-title">Line register</p>
+          <span class="chev" id="drawer-chev">▸ expand</span>
+        </div>
+        <div id="drawer-body">
+          <table>
+            <thead><tr><th>Feeder</th><th>Line</th><th>From</th><th>To</th><th>Breaker</th><th>Status</th><th>Transformer</th><th></th></tr></thead>
+            <tbody id="line-table-body"></tbody>
+          </table>
+          <p class="section-title" style="margin-top:16px;">Ring interlinks</p>
+          <table>
+            <thead><tr><th>Interlink</th><th>Node A</th><th>Node B</th><th>Switch</th><th>State</th><th></th></tr></thead>
+            <tbody id="interlink-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById('diagram');
+  const NODE_R = 20, AB_HALF = 17, X_SPACE = 180, Y_SPACE = 116, MARGIN_L = 70, MARGIN_T = 60, FEEDER_GAP = 60;
+  const SOURCE_COLOR = 'var(--teal)';
+  const TEMPLATE_VERSION = 2;
+
+  // ---------- storage (localStorage, so this file works standalone in any browser) ----------
+  // Falls back to an in-memory store for the current tab if localStorage is unavailable
+  // (e.g. some browsers' private-browsing modes) so the app still runs, just without persistence.
+  const memoryStore = {};
+  const storage = {
+    async get(key){
+      try{
+        const v = localStorage.getItem(key);
+        return v === null ? null : { value: v };
+      }catch(e){
+        return Object.prototype.hasOwnProperty.call(memoryStore, key) ? { value: memoryStore[key] } : null;
+      }
+    },
+    async set(key, value){
+      try{ localStorage.setItem(key, value); }
+      catch(e){ memoryStore[key] = value; }
+    }
+  };
+
+  // ---------- theme (dark / light) — a single app-wide preference, not per-view ----------
+  const THEME_KEY = 'gridline-theme';
+  function getStoredTheme(){
+    try{ return localStorage.getItem(THEME_KEY) || 'dark'; }
+    catch(e){ return 'dark'; }
+  }
+  function setStoredTheme(theme){
+    try{ localStorage.setItem(THEME_KEY, theme); }catch(e){ /* in-memory only for this tab */ }
+  }
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+    const btn = document.getElementById('theme-toggle-btn');
+    if(btn){
+      btn.textContent = theme === 'light' ? '🌙 Dark mode' : '☀️ Light mode';
+      btn.title = theme === 'light' ? 'Switch to the dark background' : 'Switch to a light grayish background';
+    }
+  }
+  applyTheme(getStoredTheme()); // as early as possible, before the rest of init, to avoid a flash
+
+  // =====================================================================================
+  // BACKEND INTEGRATION (Realtime view only) — see GRIDLINE-Data-Model-and-API-Spec.md and
+  // the gridline-server/ backend. The Simulator view is untouched by any of this: it stays
+  // local-only, localStorage-backed, exactly as before — it's a personal what-if sandbox,
+  // never meant to be shared. The Realtime view instead talks to the GRIDLINE backend over
+  // REST (every mutation) plus a WebSocket (every connected client — mobile or web — is told
+  // about every mutation, including ones made from someone else's device, within a second).
+  // =====================================================================================
+  // Local dev (double-clicked as a file) defaults to a separately-running backend on :4000.
+  // Deployed behind Nginx (or any host serving this file over http/https), same-origin is correct
+  // since the reverse proxy forwards /api and /socket.io to the backend container on that origin.
+  const BACKEND_URL = window.GRIDLINE_BACKEND_URL || (location.protocol === 'file:' ? 'http://localhost:4000' : location.origin);
+  const BACKEND_TOKEN_KEY = 'gridline-backend-token';
+
+  function isMobileClient(){
+    return window.matchMedia('(max-width: 860px)').matches || /Mobi|Android/i.test(navigator.userAgent);
+  }
+
+  const backend = {
+    token: null,
+    user: null,
+    socket: null,
+    connected: false,
+
+    getToken(){
+      if(this.token) return this.token;
+      try{ this.token = localStorage.getItem(BACKEND_TOKEN_KEY); }catch(e){ /* in-memory only */ }
+      return this.token;
+    },
+    setToken(token, user){
+      this.token = token;
+      this.user = user || null;
+      try{ localStorage.setItem(BACKEND_TOKEN_KEY, token); }catch(e){ /* in-memory only */ }
+    },
+    clearToken(){
+      this.token = null;
+      this.user = null;
+      try{ localStorage.removeItem(BACKEND_TOKEN_KEY); }catch(e){ /* ignore */ }
+    },
+
+    async request(method, path, body){
+      const headers = {'Content-Type':'application/json', 'X-Client-Type': isMobileClient() ? 'mobile' : 'web'};
+      const token = this.getToken();
+      if(token) headers['Authorization'] = 'Bearer ' + token;
+      const res = await fetch(BACKEND_URL + path, {
+        method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      const text = await res.text();
+      let payload = null;
+      if(text){ try{ payload = JSON.parse(text); }catch(e){ payload = text; } }
+      if(!res.ok){
+        const err = new Error((payload && payload.error) || `Request failed (${res.status})`);
+        err.status = res.status;
+        err.body = payload;
+        throw err;
+      }
+      return payload;
+    },
+    get(path){ return this.request('GET', path); },
+    post(path, body){ return this.request('POST', path, body); },
+    patch(path, body){ return this.request('PATCH', path, body); },
+    del(path){ return this.request('DELETE', path); },
+  };
+
+  // ---- server (snake_case columns) <-> client (existing camelCase state shape) mapping ----
+  // Deliberately keeps the client's internal `state` shape exactly as it always was — every
+  // rendering/layout/power-flow function in this file reads e.g. line.fromNodeId, node.breakerType,
+  // interlink.switchState — so the safest integration is a thin adapter at the edges, not a
+  // rewrite of the whole data model to match the server's column names.
+  function mapFeederFromServer(row){
+    return {
+      id: row.id, name: row.name, color: SOURCE_COLOR, sourceId: null, // sourceId backfilled below
+      kv: row.kv != null ? row.kv : '', location: row.location || '', poc: row.poc || '',
+      risks: row.risks || '', lastTripped: row.last_tripped || '', state: row.state,
+      version: row.version,
+    };
+  }
+  function mapNodeFromServer(row){
+    return {
+      id: row.id, feederId: row.feeder_id, kind: row.kind, breakerType: row.breaker_type,
+      label: row.label, state: row.state, version: row.version,
+    };
+  }
+  function mapLineFromServer(row){
+    return {
+      id: row.id, feederId: row.feeder_id, fromNodeId: row.from_node_id, toNodeId: row.to_node_id,
+      name: row.name, breakerState: row.breaker_state, version: row.version,
+    };
+  }
+  function mapTransformerFromServer(row){
+    return {
+      id: row.id, name: row.name, capacity: row.capacity_kva != null ? row.capacity_kva : 0,
+      poleName: row.pole_name || '', loadR: row.load_r != null ? row.load_r : '',
+      loadY: row.load_y != null ? row.load_y : '', loadB: row.load_b != null ? row.load_b : '',
+      loadCapturedAt: row.load_captured_at || '', lastFaultDate: row.last_fault_date || '',
+      lastFaultReason: row.last_fault_reason || '', nodeId: row.node_id, lineId: row.line_id,
+    };
+  }
+  function mapInterlinkFromServer(row){
+    return {
+      id: row.id, name: row.name, nodeAId: row.node_a_id, nodeBId: row.node_b_id,
+      breakerType: row.breaker_type, switchable: row.switchable, switchState: row.switch_state,
+      version: row.version,
+    };
+  }
+
+  function hydrateNetworkFromServer(snapshot){
+    const s = freshState();
+    s.feeders = snapshot.feeders.map(mapFeederFromServer);
+    s.nodes = snapshot.nodes.map(mapNodeFromServer);
+    s.lines = snapshot.lines.map(mapLineFromServer);
+    s.transformers = snapshot.transformers.map(mapTransformerFromServer);
+    s.interlinks = snapshot.interlinks.map(mapInterlinkFromServer);
+    for(const feeder of s.feeders){
+      const source = s.nodes.find(n=>n.feederId===feeder.id && n.kind==='source');
+      feeder.sourceId = source ? source.id : null;
+    }
+    if(snapshot.sections && snapshot.sections[0]){
+      s.sectionName = snapshot.sections[0].name || '';
+      const details = snapshot.sections[0].details || {};
+      s.sectionDetails = Object.entries(details).map(([label, value])=>({label, value}));
+    }
+    s.templateVersion = TEMPLATE_VERSION;
+    return s;
+  }
+
+  // ---- applying a live broadcast (see gridline-server src/realtime/socket.js) to local state ----
+  function applyServerEvent(evt){
+    if(!state || activeView !== 'realtime' || !evt || !evt.type) return;
+    const entityType = evt.type.split('.')[0];
+    const isDelete = evt.type.endsWith('.deleted');
+    const isCreate = evt.type.endsWith('.created');
+
+    if(isDelete){
+      if(entityType === 'feeder'){
+        // Feeder delete cascades entirely at the DB level (ON DELETE CASCADE) rather than the
+        // server enumerating every affected id — so just drop everything that pointed at it.
+        state.nodes = state.nodes.filter(n=>n.feederId!==evt.entityId);
+        state.lines = state.lines.filter(l=>l.feederId!==evt.entityId);
+        const remainingNodeIds = new Set(state.nodes.map(n=>n.id));
+        const remainingLineIds = new Set(state.lines.map(l=>l.id));
+        state.transformers = state.transformers.filter(t=>
+          (!t.nodeId || remainingNodeIds.has(t.nodeId)) && (!t.lineId || remainingLineIds.has(t.lineId)));
+        state.interlinks = state.interlinks.filter(t=>remainingNodeIds.has(t.nodeAId) && remainingNodeIds.has(t.nodeBId));
+        state.feeders = state.feeders.filter(f=>f.id!==evt.entityId);
+      } else {
+        // node.deleted / line.deleted carry the full cascade (see backend utils/cascade.js) —
+        // remove every affected id from every collection, not just the one entity clicked.
+        const nodeIds = new Set(evt.cascadedNodeIds || (entityType==='node' ? [evt.entityId] : []));
+        const lineIds = new Set(evt.cascadedLineIds || (entityType==='line' ? [evt.entityId] : []));
+        const txIds = new Set(evt.cascadedTransformerIds || (entityType==='transformer' ? [evt.entityId] : []));
+        const interlinkIds = new Set(evt.cascadedInterlinkIds || (entityType==='interlink' ? [evt.entityId] : []));
+        state.nodes = state.nodes.filter(n=>!nodeIds.has(n.id));
+        state.lines = state.lines.filter(l=>!lineIds.has(l.id));
+        state.transformers = state.transformers.filter(t=>!txIds.has(t.id));
+        state.interlinks = state.interlinks.filter(t=>!interlinkIds.has(t.id));
+      }
+      renderAll();
+      return;
+    }
+
+    if(isCreate){
+      const entity = evt.entity;
+      if(!entity) return;
+      if(entityType === 'feeder'){
+        if(!state.feeders.some(f=>f.id===entity.id)) state.feeders.push(mapFeederFromServer(entity));
+      } else if(entityType === 'node'){
+        if(state.nodes.some(n=>n.id===entity.id)) { renderAll(); return; }
+        const mapped = mapNodeFromServer(entity);
+        state.nodes.push(mapped);
+        if(mapped.kind==='source'){
+          const feeder = feederById(mapped.feederId);
+          if(feeder) feeder.sourceId = mapped.id;
+        }
+      } else if(entityType === 'line'){
+        if(!state.lines.some(l=>l.id===entity.id)) state.lines.push(mapLineFromServer(entity));
+      } else if(entityType === 'transformer'){
+        if(!state.transformers.some(t=>t.id===entity.id)) state.transformers.push(mapTransformerFromServer(entity));
+      } else if(entityType === 'interlink'){
+        if(!state.interlinks.some(t=>t.id===entity.id)) state.interlinks.push(mapInterlinkFromServer(entity));
+      }
+      renderAll();
+      return;
+    }
+
+    // plain field update — translate the server's column name back to the client's field name.
+    const fieldMapByEntity = {
+      feeder: {state:'state', name:'name', kv:'kv', location:'location', poc:'poc', risks:'risks', last_tripped:'lastTripped'},
+      node: {state:'state', label:'label'},
+      line: {breaker_state:'breakerState', name:'name'},
+      interlink: {switch_state:'switchState', name:'name', switchable:'switchable', breaker_type:'breakerType'},
+      transformer: {name:'name', capacity_kva:'capacity', pole_name:'poleName', load_r:'loadR', load_y:'loadY',
+        load_b:'loadB', load_captured_at:'loadCapturedAt', last_fault_date:'lastFaultDate', last_fault_reason:'lastFaultReason'},
+    };
+    const collectionByEntity = {
+      feeder: state.feeders, node: state.nodes, line: state.lines,
+      interlink: state.interlinks, transformer: state.transformers,
+    };
+    const collection = collectionByEntity[entityType];
+    if(!collection || !evt.field) return;
+    const target = collection.find(x=>x.id===evt.entityId);
+    if(!target) return;
+    const clientField = (fieldMapByEntity[entityType]||{})[evt.field] || evt.field;
+    target[clientField] = evt.newValue;
+    if(evt.version != null) target.version = evt.version;
+    renderAll();
+  }
+
+  function updateBackendStatusIndicator(){
+    const el = document.getElementById('backend-status');
+    const logoutBtn = document.getElementById('backend-logout-btn');
+    if(!el) return;
+    const onRealtime = activeView === 'realtime';
+    if(logoutBtn) logoutBtn.style.display = onRealtime ? '' : 'none';
+    if(!onRealtime){ el.style.display = 'none'; return; }
+    el.style.display = 'inline-flex';
+    el.textContent = backend.connected ? '● Live' : '○ Reconnecting…';
+    el.style.color = backend.connected ? 'var(--live)' : 'var(--backfeed)';
+    el.title = backend.connected
+      ? 'Connected to the GRIDLINE backend — changes sync in real time.'
+      : 'Not connected to the GRIDLINE backend — trying to reconnect.';
+  }
+
+  function connectRealtimeSocket(){
+    if(backend.socket) return;
+    backend.socket = io(BACKEND_URL, { auth: { token: backend.getToken() } });
+    backend.socket.on('connect', ()=>{ backend.connected = true; updateBackendStatusIndicator(); });
+    backend.socket.on('disconnect', ()=>{ backend.connected = false; updateBackendStatusIndicator(); });
+    backend.socket.on('connect_error', ()=>{ backend.connected = false; updateBackendStatusIndicator(); });
+    // A brief drop (elevator, tower handoff) just needs a fresh snapshot on reconnect rather than
+    // replaying missed events — reliable field connectivity means these gaps are seconds, not
+    // hours, so a wholesale re-fetch is simpler and safer than a replay/merge protocol.
+    backend.socket.on('connect', async ()=>{
+      if(state && activeView === 'realtime'){
+        try{
+          const s = await loadRealtimeFromServer();
+          state = s;
+          renderAll();
+        }catch(e){ console.error('resync after reconnect failed', e); }
+      }
+    });
+    backend.socket.on('network:event', (evt)=>applyServerEvent(evt));
+  }
+
+  async function loadRealtimeFromServer(){
+    const snapshot = await backend.get('/api/network');
+    const s = hydrateNetworkFromServer(snapshot);
+    statesByView.realtime = s;
+    return s;
+  }
+
+  // Resolved once the user has a valid token — either already stored, or just entered.
+  let pendingLoginResolvers = [];
+  function ensureLoggedIn(){
+    if(backend.getToken()) return Promise.resolve();
+    return new Promise((resolve)=>{
+      pendingLoginResolvers.push(resolve);
+      showLoginGate();
+    });
+  }
+
+  function showLoginGate(){
+    const backdrop = document.getElementById('feeder-modal-backdrop');
+    const modal = document.getElementById('feeder-modal');
+    backdrop.onclick = null; // not dismissible — Realtime can't be used unauthenticated
+    modal.innerHTML = `
+      <h2>Sign in to GRIDLINE Realtime</h2>
+      <p class="modal-sub">The Realtime view is shared live across every field and control-center user — sign in with your GRIDLINE account. (The Simulator view doesn't need this.)</p>
+      <label>Email</label>
+      <input type="email" id="login-email" autocomplete="username">
+      <label>Password</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+      <p id="login-error" style="color:var(--danger);font-size:11.5px;display:none;margin:8px 0 0;"></p>
+      <div class="modal-actions">
+        <button class="btn-primary" style="margin-top:0;width:100%;" id="login-submit">Sign in</button>
+      </div>
+    `;
+    backdrop.style.display = 'flex';
+    const submit = async ()=>{
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const errorEl = document.getElementById('login-error');
+      errorEl.style.display = 'none';
+      if(!email || !password){
+        errorEl.textContent = 'Email and password are both required.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      try{
+        const { token, user } = await backend.post('/api/auth/login', { email, password });
+        backend.setToken(token, user);
+        backdrop.style.display = 'none';
+        pendingLoginResolvers.forEach(resolve=>resolve());
+        pendingLoginResolvers = [];
+      }catch(e){
+        errorEl.textContent = e.message || 'Sign-in failed.';
+        errorEl.style.display = 'block';
+      }
+    };
+    document.getElementById('login-submit').onclick = submit;
+    modal.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submit(); });
+    });
+    document.getElementById('login-email').focus();
+  }
+
+  async function ensureRealtimeConnected(){
+    if(statesByView.realtime && backend.connected) return statesByView.realtime;
+    await ensureLoggedIn();
+    const s = await loadRealtimeFromServer();
+    connectRealtimeSocket();
+    updateBackendStatusIndicator();
+    return s;
+  }
+
+  // Shared by every toggle/mutation function below: 409 means someone else changed the same
+  // entity a moment earlier — reliable connectivity makes this a rare, few-hundred-millisecond
+  // race rather than something needing a merge UI, so the fix is just "refresh and tell the user."
+  // Anything else (network blip, server error) gets a plain message without touching local state.
+  async function handleRealtimeMutationError(err, label){
+    if(err && err.status === 409){
+      try{
+        const s = await loadRealtimeFromServer();
+        state = s;
+        renderAll();
+      }catch(e2){ /* keep showing the stale view rather than compounding the error */ }
+      alert(`${label} was just changed by someone else — refreshed to the latest data. Please try again if needed.`);
+    } else {
+      alert(`${label} could not be updated: ${(err && err.message) || 'network error'}.`);
+    }
+  }
+
+  let state = null;
+  let zoomLevel = 1;
+  let fitToScreen = false; // toggled by the "fit to screen" button — see renderDiagram/setFitToScreen
+
+  function freshState(){
+    return { feeders:[], nodes:[], lines:[], transformers:[], interlinks:[], sectionName:'', sectionDetails:[],
+      rawSectionSheet:null, extraSheets:{},
+      counters:{feeder:1,node:1,line:1,transformer:1,interlink:1} };
+  }
+
+  // Default template data — matches the RealtimeView.xlsx / SimulatorView.xlsx column schema:
+  // Feeder | LineStart | LineEnd | AB Type | AB State | Transformer Connected | RMU Connected Transformer
+  const KSE_TEMPLATE_ROWS = [
+    { "Feeder":"Thrikkakara", "LineStart":"Pipeline", "LineEnd":"Cardinal", "AB Type":"AB", "AB State":"Closed", "Transformer Connected":"Judgemukku", "RMU Connected Transformer":"" },
+    { "Feeder":"Thrikkakara", "LineStart":"Cardinal", "LineEnd":"Workshop", "AB Type":"AB", "AB State":"Closed", "Transformer Connected":"", "RMU Connected Transformer":"" },
+    { "Feeder":"Thrikkakara", "LineStart":"Workshop", "LineEnd":"StyleUnion", "AB Type":"RMU", "AB State":"Closed", "Transformer Connected":"", "RMU Connected Transformer":"StyleUnion" },
+    { "Feeder":"Thrikkakara", "LineStart":"StyleUnion", "LineEnd":"Karayamparambu", "AB Type":"AB", "AB State":"Closed", "Transformer Connected":"Suburban", "RMU Connected Transformer":"" },
+    { "Feeder":"Thrikkakara", "LineStart":"Karayamparambu", "LineEnd":"Townhall", "AB Type":"AB", "AB State":"Closed", "Transformer Connected":"Townhall", "RMU Connected Transformer":"" },
+    { "Feeder":"Thrikkakara", "LineStart":"Townhall", "LineEnd":"Kangarappady", "AB Type":"AB", "AB State":"Closed", "Transformer Connected":"Kangarappady", "RMU Connected Transformer":"" },
+    { "Feeder":"Thevakkal", "LineStart":"Thevakkal School", "LineEnd":"Vayanacode", "AB Type":"AB", "AB State":"Closed", "Transformer Connected":"", "RMU Connected Transformer":"" },
+    { "Feeder":"Thevakkal", "LineStart":"Vayanacode", "LineEnd":"Kangarappady", "AB Type":"AB", "AB State":"Open", "Transformer Connected":"", "RMU Connected Transformer":"" }
+  ];
+
+  // ---- Sheet 1: "Lines" — topology (feeders, breakers, lines, implicit interlinks, primary transformer names) ----
+  // Each row: {Feeder, LineStart, LineEnd, "AB Type", "AB State", "Transformer Connected", "RMU Connected Transformer"}.
+  // If a row's LineEnd label already exists as a node (possibly under a different feeder), the row
+  // is treated as a ring interlink rather than a new radial breaker.
+  function buildTopologyFromLineRows(rows){
+    const s = freshState();
+    const nodeByLabel = new Map();   // label -> nodeId
+    const feederByName = new Map();  // feeder name -> feederId
+    const lineByName = new Map();    // line name -> lineId
+
+    for(const row of rows){
+      const feederName = String(row['Feeder']||'').trim();
+      const lineStart = String(row['LineStart']||'').trim();
+      const lineEnd = String(row['LineEnd']||'').trim();
+      if(!feederName || !lineStart || !lineEnd) continue; // skip blank/invalid rows
+
+      const abTypeRaw = String(row['AB Type']||'AB').trim().toUpperCase();
+      const abType = abTypeRaw === 'RMU' ? 'RMU' : abTypeRaw === 'SPLIT' ? 'Split' : abTypeRaw === 'TAP' ? 'Tap' : 'AB';
+      const abState = String(row['AB State']||'Closed').trim().toLowerCase() === 'open' ? 'Open' : 'Closed';
+      const txConnected = String(row['Transformer Connected']||'').trim();
+      const rmuTx = String(row['RMU Connected Transformer']||'').trim();
+
+      let feederId = feederByName.get(feederName);
+      let fromNodeId;
+      if(!feederId){
+        const f = addFeederRaw(s, feederName, { sourceLabel: lineStart });
+        feederId = f.id;
+        feederByName.set(feederName, feederId);
+        nodeByLabel.set(lineStart, f.sourceId);
+        fromNodeId = f.sourceId;
+      } else {
+        fromNodeId = nodeByLabel.get(lineStart);
+        if(!fromNodeId) continue; // LineStart wasn't established yet — skip malformed row
+      }
+
+      if(nodeByLabel.has(lineEnd)){
+        // Interlinks always describe a switch (AB/RMU); Split/Tap have no switch, so fall back to AB here.
+        // Not switchable by default — the "Interlinks" sheet's Switchable column (see applyInterlinkRows) is the
+        // only way to mark an interlink as having its own real switch; switchState is forced closed either
+        // way once the whole workbook has been parsed (see the end of buildStateFromWorkbookData).
+        const interlinkBreakerType = (abType==='AB' || abType==='RMU') ? abType : 'AB';
+        const targetId = nodeByLabel.get(lineEnd);
+        addInterlinkRaw(s, fromNodeId, targetId, 'INTERLINK'+s.counters.interlink, interlinkBreakerType, abState==='Open' ? 'NO' : 'NC', false);
+      } else {
+        const lineName = 'L'+s.counters.line;
+        const built = addLineRaw(s, feederId, fromNodeId, lineName, lineEnd, abType, false, null, abState);
+        nodeByLabel.set(lineEnd, built.id);
+        lineByName.set(lineName, built.lineId);
+        if(txConnected){
+          addTransformerRaw(s, { name: txConnected, lineId: built.lineId });
+        }
+        if(NODE_TX_TYPES.has(abType) && rmuTx){
+          addTransformerRaw(s, { name: rmuTx, nodeId: built.id });
+        }
+      }
+    }
+    return { state: s, nodeByLabel, feederByName, lineByName };
+  }
+
+  // ---- Sheet 2: "Feeders" — enrichment. Matches by feeder name. ----
+  function applyFeederRows(s, feederByName, rows){
+    if(!rows) return;
+    for(const row of rows){
+      const name = String(row['Feeder']||'').trim();
+      if(!name) continue;
+      const feederId = feederByName.get(name);
+      const feeder = feederId ? s.feeders.find(f=>f.id===feederId) : null;
+      if(!feeder) continue;
+      feeder.kv = row['Voltage (kV)'] !== undefined ? String(row['Voltage (kV)']).trim() : feeder.kv;
+      feeder.location = row['Location'] !== undefined ? String(row['Location']).trim() : feeder.location;
+      feeder.poc = row['Contact'] !== undefined ? String(row['Contact']).trim() : feeder.poc;
+      feeder.risks = row['Known Risks'] !== undefined ? String(row['Known Risks']).trim() : feeder.risks;
+      feeder.lastTripped = row['Last Tripped'] !== undefined ? String(row['Last Tripped']).trim() : feeder.lastTripped;
+      const status = String(row['Status']||'').trim().toLowerCase();
+      if(status === 'off') feeder.state = 'Off';
+      else if(status === 'on') feeder.state = 'On';
+    }
+  }
+
+  // ---- Sheet 3: "Transformers" — enrichment + support for extra taps beyond the Lines sheet's one-per-line/node. ----
+  // Matches an existing transformer by name (case-insensitive). If not found, creates a new one using
+  // "Attached Line" (a line name like "L3") or "Attached Breaker" (a node label) to place it.
+  function applyTransformerRows(s, nodeByLabel, lineByName, rows){
+    if(!rows) return;
+    for(const row of rows){
+      const name = String(row['Transformer Name']||'').trim();
+      if(!name) continue;
+      let tx = s.transformers.find(t=>t.name.toLowerCase() === name.toLowerCase());
+      const capacity = row['Capacity (kVA)'];
+      const poleName = row['Pole Name'] !== undefined ? String(row['Pole Name']).trim() : undefined;
+      const loadR = row['R Phase (A)'];
+      const loadY = row['Y Phase (A)'];
+      const loadB = row['B Phase (A)'];
+      const loadCapturedAt = row['Load Captured At'] !== undefined ? String(row['Load Captured At']).trim() : undefined;
+      const lastFaultDate = row['Last Fault Date'] !== undefined ? String(row['Last Fault Date']).trim() : undefined;
+      const lastFaultReason = row['Last Fault Reason'] !== undefined ? String(row['Last Fault Reason']).trim() : undefined;
+
+      if(!tx){
+        const lineName = String(row['Attached Line']||'').trim();
+        const breakerLabel = String(row['Attached Breaker']||'').trim();
+        const lineId = lineName ? lineByName.get(lineName) : null;
+        const nodeId = (!lineId && breakerLabel) ? nodeByLabel.get(breakerLabel) : null;
+        if(!lineId && !nodeId) continue; // nothing to attach this new transformer to — skip
+        addTransformerRaw(s, {
+          name, capacity, poleName, loadR, loadY, loadB, loadCapturedAt, lastFaultDate, lastFaultReason,
+          lineId: lineId||null, nodeId: nodeId||null
+        });
+        continue;
+      }
+      if(capacity !== undefined && capacity !== '') tx.capacity = Number(capacity)||0;
+      if(poleName !== undefined) tx.poleName = poleName;
+      if(loadR !== undefined && loadR !== '') tx.loadR = Number(loadR);
+      if(loadY !== undefined && loadY !== '') tx.loadY = Number(loadY);
+      if(loadB !== undefined && loadB !== '') tx.loadB = Number(loadB);
+      if(loadCapturedAt !== undefined) tx.loadCapturedAt = loadCapturedAt;
+      if(lastFaultDate !== undefined) tx.lastFaultDate = lastFaultDate;
+      if(lastFaultReason !== undefined) tx.lastFaultReason = lastFaultReason;
+    }
+  }
+
+  // ---- Sheet 4: "Interlinks" — enrichment. Matches by (Node A, Node B) label pair, either order. Lets an interlink's
+  // display name and switch details be overridden/preserved beyond the auto "INTERLINK1" naming. ----
+  // The "Switchable" column is the one place an interlink can be marked as having an actual physical
+  // switch of its own (Yes/No — anything else is treated as No, the normal case). Only a switchable
+  // interlink is clickable in the diagram to open/close; every interlink's switchState is force-closed at the
+  // end of buildStateFromWorkbookData regardless, so "State" here only sticks for a switchable interlink.
+  function applyInterlinkRows(s, nodeByLabel, rows){
+    if(!rows) return;
+    for(const row of rows){
+      const nameA = String(row['Node A']||'').trim();
+      const nameB = String(row['Node B']||'').trim();
+      if(!nameA || !nameB) continue;
+      const idA = nodeByLabel.get(nameA), idB = nodeByLabel.get(nameB);
+      if(!idA || !idB) continue;
+      const interlink = s.interlinks.find(t =>
+        (t.nodeAId===idA && t.nodeBId===idB) || (t.nodeAId===idB && t.nodeBId===idA));
+      if(!interlink) continue;
+      let interlinkName = String(row['Interlink Name']||row['Tie Name']||'').trim(); // 'Tie Name' = legacy column header, still accepted
+      // Files saved before the Tie -> Interlink rename still carry old auto-generated names like
+      // "TIE1"/"TIE2" as literal data in that column. Normalize just that specific legacy pattern
+      // to the new "INTERLINK#" naming so the canvas doesn't show a mix of both — but leave any
+      // name a user actually typed themselves (anything that isn't exactly "TIE" + digits) alone.
+      const legacyAutoName = /^TIE(\d+)$/i.exec(interlinkName);
+      if(legacyAutoName) interlinkName = 'INTERLINK' + legacyAutoName[1];
+      if(interlinkName) interlink.name = interlinkName;
+      const switchType = String(row['Switch Type']||'').trim().toUpperCase();
+      if(switchType === 'RMU' || switchType === 'AB') interlink.breakerType = switchType;
+      const switchableVal = String(row['Switchable']||'').trim().toLowerCase();
+      if(switchableVal) interlink.switchable = (switchableVal === 'yes' || switchableVal === 'true');
+      const stateVal = String(row['State']||'').trim().toLowerCase();
+      if(stateVal === 'closed') interlink.switchState = 'NC';
+      else if(stateVal === 'open') interlink.switchState = 'NO';
+    }
+  }
+
+  // ---- Sheet 5: "RMU" — enrichment. Captures per-bay switch state for RMU junctions that have
+  // more than one line coming off the same busbar. Matches a line by its name (e.g. "L7", unique
+  // across the whole workbook) and, as a safety check, confirms that line's fromNode label matches
+  // "RMU Name" before applying — so a typo'd RMU Name just skips the row rather than silently
+  // touching the wrong bay. ----
+  function applyRmuBayRows(s, nodeByLabel, lineByName, rows){
+    if(!rows) return;
+    for(const row of rows){
+      const rmuName = String(row['RMU Name']||'').trim();
+      const bayLine = String(row['Bay Line']||'').trim();
+      if(!rmuName || !bayLine) continue;
+      const lineId = lineByName.get(bayLine);
+      const line = lineId ? s.lines.find(l=>l.id===lineId) : null;
+      if(!line) continue;
+      const fromNode = s.nodes.find(n=>n.id===line.fromNodeId);
+      if(!fromNode || fromNode.breakerType !== 'RMU') continue;
+      if(fromNode.label.trim().toLowerCase() !== rmuName.toLowerCase()) continue;
+      const stateVal = String(row['Bay State']||'').trim().toLowerCase();
+      if(stateVal === 'open') line.breakerState = 'Open';
+      else if(stateVal === 'closed') line.breakerState = 'Closed';
+    }
+  }
+
+  // ---- Sheet 6: "Section" — a simple label/value sheet, not a row-per-record table. Whatever
+  // row has a cell reading "section" (any case/whitespace), the cell immediately to its right is
+  // the section name — e.g. a row like `Section | Thrikkakara Division`. Scanning raw cells this
+  // way (rather than treating row 1 as column headers) matches that free-form layout directly.
+  function parseSectionSheet(sheet){
+    if(!sheet) return '';
+    const grid = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'' });
+
+    // Preferred layout: value immediately to the right, same row — e.g. `Section | Thevakkal`.
+    // Falls back to value directly below (a stacked "label row, value row" layout) since that's
+    // an easy, equally natural way to lay this out in Excel.
+    for(let r=0;r<grid.length;r++){
+      const row = grid[r] || [];
+      for(let c=0;c<row.length;c++){
+        if(String(row[c]||'').trim().toLowerCase() === 'section'){
+          const right = String(row[c+1]||'').trim();
+          if(right) return right;
+          const below = grid[r+1] ? String(grid[r+1][c]||'').trim() : '';
+          if(below) return below;
+        }
+      }
+    }
+
+    // Fallback: a standard header-row table with a column literally named "Section".
+    const objRows = XLSX.utils.sheet_to_json(sheet, { defval:'' });
+    for(const row of objRows){
+      for(const key of Object.keys(row)){
+        if(key.trim().toLowerCase() === 'section'){
+          const val = String(row[key]||'').trim();
+          if(val) return val;
+        }
+      }
+    }
+    return '';
+  }
+
+  // Every row of the Section sheet as a {label, value} pair (first cell = label, second = value) —
+  // not just the "Section" row itself. Shown as a hover tooltip over the section heading so anything
+  // else the user has added there (circle, division, engineer in charge, etc.) is still one hover away.
+  function parseSectionDetails(sheet){
+    if(!sheet) return [];
+    const grid = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'' });
+    const details = [];
+    for(const row of grid){
+      const label = String((row && row[0]) || '').trim();
+      const value = String((row && row[1]) || '').trim();
+      if(label && value) details.push({ label, value });
+    }
+    return details;
+  }
+
+  // Builds a complete network from up to 6 sheets of data: lineRows (required), feederRows,
+  // transformerRows, interlinkRows, rmuBayRows, sectionName (all optional enrichment). This is the shared
+  // contract behind both the initial template load and the live "Import Excel" feature — the same
+  // shape either way.
+  function buildStateFromWorkbookData({ lineRows, feederRows, transformerRows, interlinkRows, rmuBayRows, sectionName, sectionDetails }){
+    const { state: s, nodeByLabel, feederByName, lineByName } = buildTopologyFromLineRows(lineRows||[]);
+    applyFeederRows(s, feederByName, feederRows);
+    applyTransformerRows(s, nodeByLabel, lineByName, transformerRows);
+    applyInterlinkRows(s, nodeByLabel, interlinkRows);
+    applyRmuBayRows(s, nodeByLabel, lineByName, rmuBayRows);
+    // Every interlink always loads Closed, full stop — in practice an interlink has no intermediate
+    // switch of its own; a ring is maintained by operating the AB switches at its two endpoints
+    // instead. This overrides anything the sheet said either interlink's initial state should be. A
+    // switchable interlink can still be opened afterward via its popup during the session; it just never
+    // starts pre-opened on a fresh load/import.
+    for(const interlink of s.interlinks) interlink.switchState = 'NC';
+    s.sectionName = sectionName || '';
+    s.sectionDetails = sectionDetails || [];
+    s.templateVersion = TEMPLATE_VERSION;
+    return s;
+  }
+
+  function buildTemplateState(){
+    return buildStateFromWorkbookData({ lineRows: KSE_TEMPLATE_ROWS });
+  }
+
+  function addFeederRaw(s, name, meta){
+    meta = meta || {};
+    const id = 'f'+(s.counters.feeder++);
+    const color = SOURCE_COLOR;
+    const sourceId = 'n'+(s.counters.node++);
+    s.feeders.push({
+      id, name, color, sourceId,
+      kv: meta.kv || '',
+      location: meta.location || '',
+      poc: meta.poc || '',
+      risks: meta.risks || '',
+      lastTripped: meta.lastTripped || '',
+      state: meta.state || 'On'
+    });
+    s.nodes.push({id: sourceId, label: meta.sourceLabel || (name + " Source"), kind:'source', feederId:id});
+    return {id, sourceId};
+  }
+
+  function addTransformerRaw(s, meta){
+    const id = 't'+(s.counters.transformer++);
+    s.transformers.push({
+      id,
+      name: meta.name || ('T'+id),
+      capacity: Number(meta.capacity)||0,
+      poleName: meta.poleName || '',
+      lastFaultDate: meta.lastFaultDate || '',
+      lastFaultReason: meta.lastFaultReason || '',
+      loadR: meta.loadR !== undefined && meta.loadR !== '' ? Number(meta.loadR) : '',
+      loadY: meta.loadY !== undefined && meta.loadY !== '' ? Number(meta.loadY) : '',
+      loadB: meta.loadB !== undefined && meta.loadB !== '' ? Number(meta.loadB) : '',
+      loadCapturedAt: meta.loadCapturedAt || '',
+      nodeId: meta.nodeId || null,
+      lineId: meta.lineId || null
+    });
+    return {id};
+  }
+
+  // Split and Tap are fixed junctions — they never carry an Open/Closed switch state,
+  // regardless of what's passed in as nodeState (e.g. from an imported "AB State" column).
+  const SWITCHABLE_TYPES = new Set(['AB', 'RMU']);
+  const NODE_TX_TYPES = new Set(['RMU', 'Tap']); // types that may carry a transformer directly on the node
+
+  // RMU junctions can have several bays (lines) coming off the same busbar, each independently
+  // switchable — unlike AB/Split/Tap, whose single node state gates everything downstream at once.
+  // A line's own breakerState models "the bay switch at the RMU end where this line leaves it."
+  // It only makes practical sense when the line's fromNode is an RMU, but the field itself is
+  // generic on every line (defaulting to Closed) so it's harmless elsewhere.
+  function addLineRaw(s, feederId, fromNodeId, lineName, nodeLabel, breakerType, hasTx, txMeta, nodeState, bayState){
+    const toId = 'n'+(s.counters.node++);
+    const lineId = 'l'+(s.counters.line++);
+    const state_ = SWITCHABLE_TYPES.has(breakerType) ? (nodeState || 'Closed') : 'Closed';
+    s.nodes.push({id:toId, label:nodeLabel, kind:'breaker', breakerType, feederId, state: state_});
+    s.lines.push({id:lineId, name:lineName, feederId, fromNodeId, toNodeId:toId, breakerState: bayState || 'Closed'});
+    if(NODE_TX_TYPES.has(breakerType) && hasTx && txMeta){
+      addTransformerRaw(s, Object.assign({}, txMeta, {nodeId:toId}));
+    }
+    return {id:toId, lineId};
+  }
+
+  async function toggleLineBayState(lineId){
+    const line = state.lines.find(l=>l.id===lineId);
+    if(!line) return;
+    const newState = line.breakerState === 'Open' ? 'Closed' : 'Open';
+    if(activeView === 'realtime'){
+      try{
+        const updated = await backend.patch(`/api/lines/${line.id}`, { breakerState: newState, expectedVersion: line.version });
+        Object.assign(line, mapLineFromServer(updated));
+        renderAll();
+      }catch(e){ await handleRealtimeMutationError(e, `${line.name}'s bay state`); }
+      return;
+    }
+    line.breakerState = newState;
+    saveState(); renderAll();
+  }
+
+  function bayLinesOf(nodeId){
+    return state.lines.filter(l=>l.fromNodeId===nodeId);
+  }
+
+  // Interlinks model a second, independent way power can arrive at a node — e.g. a ring backfeed from
+  // another feeder — separate from that node's own parent-line "incoming" switch. Both can be
+  // closed at once (an unsynchronized dual feed), which is what dualFeedWarning below flags.
+  function interlinksTouchingNode(nodeId){
+    return state.interlinks.filter(t=>t.nodeAId===nodeId || t.nodeBId===nodeId);
+  }
+
+  // Applies to every junction type (AB, RMU, Split, Tap) — not just switchable ones. A Split or
+  // Tap has no on/off switch of its own (always effectively "Closed"), but it can still have a
+  // ring interlink land on it, so the same dual-feed hazard (two live paths converging unsynchronized)
+  // is just as real there as at an AB/RMU.
+  function hasDualFeedWarning(node){
+    if(node.kind !== 'breaker') return false;
+    if(node.state === 'Open') return false;
+    return interlinksTouchingNode(node.id).some(t=>t.switchState==='NC');
+  }
+
+  // switchable defaults to false: the normal case in Indian distribution practice is that a ring
+  // interlink/interlink has no physical switch of its own at all — the ring is opened/closed by operating
+  // the AB switches at its two endpoints instead. A interlink only gets an independently operable switch
+  // (and only then is it clickable in the diagram to open/close) when switchable is explicitly true.
+  // Regardless of switchable, every interlink always loads Closed (NC) — see the "force closed on load"
+  // step in buildStateFromWorkbookData/buildTemplateState — so switchState here only matters for a
+  // switchable interlink that the user (or a re-import) has since toggled open during the session.
+  function addInterlinkRaw(s, nodeAId, nodeBId, name, breakerType, switchState, switchable){
+    const id = 'interlink'+(s.counters.interlink++);
+    s.interlinks.push({id, name, nodeAId, nodeBId, breakerType, switchState: switchable ? switchState : 'NC', switchable: !!switchable});
+    return {id};
+  }
+
+  let activeView = 'realtime';
+  const statesByView = {}; // cache of loaded view states, keyed by 'realtime' | 'simulator'
+
+  function storageKeyFor(view){ return 'gridline-network-data-' + view; }
+
+  async function ensureViewLoaded(view){
+    if(statesByView[view]) return statesByView[view];
+    try{
+      const res = await storage.get(storageKeyFor(view));
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(parsed.templateVersion === TEMPLATE_VERSION){
+          statesByView[view] = parsed;
+          return parsed;
+        }
+      }
+    }catch(e){ /* not found */ }
+    const fresh = buildTemplateState();
+    statesByView[view] = fresh;
+    await saveStateFor(view, fresh);
+    return fresh;
+  }
+
+  async function saveStateFor(view, s){
+    try{
+      await storage.set(storageKeyFor(view), JSON.stringify(s));
+    }catch(e){ console.error('save failed', e); }
+  }
+
+  async function saveState(){
+    // Realtime has no localStorage copy to write anymore — every realtime mutation already went
+    // through the backend API (and its own DB write) before touching local `state`, so this is a
+    // no-op there. Simulator is untouched: still a local, per-user sandbox.
+    if(activeView === 'realtime') return;
+    await saveStateFor(activeView, state);
+  }
+
+  async function switchView(view){
+    activeView = view;
+    if(view === 'realtime'){
+      try{
+        state = await ensureRealtimeConnected();
+      }catch(e){
+        console.error('Could not connect to the GRIDLINE backend', e);
+        alert('Could not connect to the GRIDLINE backend (' + BACKEND_URL + '). Is it running? ' + (e.message||''));
+        state = freshState();
+      }
+    } else {
+      state = await ensureViewLoaded(view);
+      statesByView[view] = state;
+    }
+    document.querySelectorAll('.view-tab').forEach(btn=>{
+      btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    updateBackendStatusIndicator();
+    renderAll();
+  }
+
+  // ---------- helpers ----------
+  function feederById(id){ return state.feeders.find(f=>f.id===id); }
+  function nodeById(id){ return state.nodes.find(n=>n.id===id); }
+  function childLinesOf(nodeId){ return state.lines.filter(l=>l.fromNodeId===nodeId); }
+  function txOfNode(nodeId){ return state.transformers.find(t=>t.nodeId===nodeId); }
+  function txsOnLine(lineId){ return state.transformers.filter(t=>t.lineId===lineId); }
+
+  // ---------- power flow (which lines/interlinks are live vs isolated, and backfeed direction) ----------
+  // Each breaker node is modeled as two graph vertices: "<id>_up" (source side of its switch)
+  // and "<id>_down" (load-side bus, where children lines + interlinks attach). A Closed breaker bridges
+  // up<->down; an Open one doesn't. Source nodes are a single vertex (their own id).
+  function fromVertexKey(node){ return node.kind==='source' ? node.id : node.id+'_down'; }
+  function toVertexKey(node){ return node.kind==='source' ? node.id : node.id+'_up'; }
+
+  function buildPowerAdjacency(includeInterlinks){
+    const adj = new Map();
+    const add = (a,b)=>{
+      if(!adj.has(a)) adj.set(a,[]);
+      if(!adj.has(b)) adj.set(b,[]);
+      adj.get(a).push(b); adj.get(b).push(a);
+    };
+    for(const node of state.nodes){
+      if(node.kind==='breaker' && node.state !== 'Open'){
+        add(node.id+'_up', node.id+'_down');
+      }
+    }
+    for(const line of state.lines){
+      const from = nodeById(line.fromNodeId), to = nodeById(line.toNodeId);
+      if(!from || !to) continue;
+      if(line.breakerState === 'Open') continue; // this bay is switched off at its source junction
+      add(fromVertexKey(from), toVertexKey(to));
+    }
+    if(includeInterlinks){
+      for(const interlink of state.interlinks){
+        if(interlink.switchState !== 'NC') continue;
+        const a = nodeById(interlink.nodeAId), b = nodeById(interlink.nodeBId);
+        if(!a || !b) continue;
+        add(fromVertexKey(a), fromVertexKey(b));
+      }
+    }
+    return adj;
+  }
+
+  function bfsEnergized(adj){
+    const energized = new Set();
+    const queue = [];
+    for(const feeder of state.feeders){
+      if(feeder.state === 'Off') continue;
+      const src = nodeById(feeder.sourceId);
+      if(src){ energized.add(src.id); queue.push(src.id); }
+    }
+    while(queue.length){
+      const v = queue.shift();
+      for(const n of (adj.get(v)||[])){
+        if(!energized.has(n)){ energized.add(n); queue.push(n); }
+      }
+    }
+    return energized;
+  }
+
+  function computePowerFlow(){
+    const full = bfsEnergized(buildPowerAdjacency(true));       // includes backfeed via closed interlinks
+    const primary = bfsEnergized(buildPowerAdjacency(false));   // radial-only, no interlinks
+    return { full, primary };
+  }
+
+  function collectSubtree(nodeId, acc){
+    acc.nodes.add(nodeId);
+    for(const l of childLinesOf(nodeId)){
+      acc.lines.add(l.id);
+      collectSubtree(l.toNodeId, acc);
+    }
+    return acc;
+  }
+
+  async function deleteLine(lineId){
+    const line = state.lines.find(l=>l.id===lineId);
+    if(!line) return;
+    if(activeView === 'realtime'){
+      try{
+        await backend.del(`/api/lines/${lineId}`);
+        // The socket broadcast (line.deleted, with the full cascade list) does the actual local
+        // removal — see applyServerEvent — so every connected client (including this one) updates
+        // the same way. Nothing else to do here on success.
+      }catch(e){ await handleRealtimeMutationError(e, 'That branch'); }
+      return;
+    }
+    const acc = collectSubtree(line.toNodeId, {nodes:new Set(), lines:new Set()});
+    acc.lines.add(lineId);
+    state.lines = state.lines.filter(l=>!acc.lines.has(l.id));
+    state.nodes = state.nodes.filter(n=>!acc.nodes.has(n.id));
+    state.transformers = state.transformers.filter(t=>
+      !(t.nodeId && acc.nodes.has(t.nodeId)) && !(t.lineId && acc.lines.has(t.lineId)));
+    state.interlinks = state.interlinks.filter(t=>!acc.nodes.has(t.nodeAId) && !acc.nodes.has(t.nodeBId));
+    saveState(); renderAll();
+  }
+
+  async function deleteFeeder(feederId){
+    if(activeView === 'realtime'){
+      try{
+        await backend.del(`/api/feeders/${feederId}`);
+        // No cascade payload for feeders (see applyServerEvent) — the delete cascades at the DB
+        // level, and the socket handler drops everything that pointed at this feeder locally too.
+      }catch(e){ await handleRealtimeMutationError(e, 'That feeder'); }
+      return;
+    }
+    const nodeIds = new Set(state.nodes.filter(n=>n.feederId===feederId).map(n=>n.id));
+    const lineIds = new Set(state.lines.filter(l=>l.feederId===feederId).map(l=>l.id));
+    state.nodes = state.nodes.filter(n=>n.feederId!==feederId);
+    state.lines = state.lines.filter(l=>l.feederId!==feederId);
+    state.transformers = state.transformers.filter(t=>
+      !(t.nodeId && nodeIds.has(t.nodeId)) && !(t.lineId && lineIds.has(t.lineId)));
+    state.interlinks = state.interlinks.filter(t=>!nodeIds.has(t.nodeAId) && !nodeIds.has(t.nodeBId));
+    state.feeders = state.feeders.filter(f=>f.id!==feederId);
+    saveState(); renderAll();
+  }
+
+  async function deleteInterlink(interlinkId){
+    if(activeView === 'realtime'){
+      try{ await backend.del(`/api/interlinks/${interlinkId}`); }
+      catch(e){ await handleRealtimeMutationError(e, 'That interlink'); }
+      return;
+    }
+    state.interlinks = state.interlinks.filter(t=>t.id!==interlinkId);
+    saveState(); renderAll();
+  }
+
+  async function deleteTransformer(txId){
+    if(activeView === 'realtime'){
+      try{ await backend.del(`/api/transformers/${txId}`); }
+      catch(e){ await handleRealtimeMutationError(e, 'That transformer'); }
+      return;
+    }
+    state.transformers = state.transformers.filter(t=>t.id!==txId);
+    saveState(); renderAll();
+  }
+
+  async function toggleNodeState(nodeId){
+    const node = nodeById(nodeId);
+    if(!node || node.kind !== 'breaker' || !SWITCHABLE_TYPES.has(node.breakerType)) return;
+    const newState = node.state === 'Open' ? 'Closed' : 'Open';
+    if(activeView === 'realtime'){
+      try{
+        const updated = await backend.patch(`/api/nodes/${node.id}`, { state: newState, expectedVersion: node.version });
+        Object.assign(node, mapNodeFromServer(updated));
+        renderAll();
+      }catch(e){ await handleRealtimeMutationError(e, `${node.label}'s switch state`); }
+      return;
+    }
+    node.state = newState;
+    saveState(); renderAll();
+  }
+
+  async function toggleInterlinkState(interlinkId){
+    const interlink = state.interlinks.find(t=>t.id===interlinkId);
+    // Guard here too (not just at the click level): an interlink with no physical switch of its own has
+    // nothing to toggle — see the "switchable" flag.
+    if(!interlink || !interlink.switchable) return;
+    const newState = interlink.switchState === 'NC' ? 'NO' : 'NC';
+    if(activeView === 'realtime'){
+      try{
+        const updated = await backend.patch(`/api/interlinks/${interlink.id}`, { switchState: newState, expectedVersion: interlink.version });
+        Object.assign(interlink, mapInterlinkFromServer(updated));
+        renderAll();
+      }catch(e){ await handleRealtimeMutationError(e, `${interlink.name}'s state`); }
+      return;
+    }
+    interlink.switchState = newState;
+    saveState(); renderAll();
+  }
+
+  async function toggleFeederState(feederId){
+    const feeder = feederById(feederId);
+    if(!feeder) return;
+    const newState = feeder.state === 'Off' ? 'On' : 'Off';
+    if(activeView === 'realtime'){
+      try{
+        const updated = await backend.patch(`/api/feeders/${feeder.id}`, { state: newState, expectedVersion: feeder.version });
+        const sourceId = feeder.sourceId; // mapFeederFromServer doesn't know this — preserve it
+        Object.assign(feeder, mapFeederFromServer(updated));
+        feeder.sourceId = sourceId;
+        renderAll();
+      }catch(e){ await handleRealtimeMutationError(e, `${feeder.name}'s power state`); }
+      return;
+    }
+    feeder.state = newState;
+    saveState(); renderAll();
+  }
+
+  // ---------- layout ----------
+  function computeLayout(){
+    const positions = {};
+    let globalOffsetY = MARGIN_T;
+    for(const feeder of state.feeders){
+      const leafCounter = {count:0};
+      const local = {};
+      layoutNode(feeder.sourceId, 0, leafCounter, local);
+      const leafTotal = Math.max(leafCounter.count, 1);
+      const treeHeight = (leafTotal-1) * Y_SPACE;
+      for(const [nid, pos] of Object.entries(local)){
+        positions[nid] = {x: MARGIN_L + pos.x, y: globalOffsetY + pos.y};
+      }
+      globalOffsetY += treeHeight + Y_SPACE + FEEDER_GAP;
+    }
+    return {positions, totalHeight: globalOffsetY};
+
+    function layoutNode(nodeId, depth, leafCounter, local){
+      const kids = childLinesOf(nodeId);
+      if(kids.length===0){
+        const y = leafCounter.count * Y_SPACE;
+        leafCounter.count++;
+        local[nodeId] = {x: depth*X_SPACE, y};
+        return y;
+      }
+      const ys = kids.map(k => layoutNode(k.toNodeId, depth+1, leafCounter, local));
+      const y = ys.reduce((a,b)=>a+b,0)/ys.length;
+      local[nodeId] = {x: depth*X_SPACE, y};
+      return y;
+    }
+  }
+
+  // ---------- SVG drawing ----------
+  function el(tag, attrs, parent){
+    const e = document.createElementNS(SVGNS, tag);
+    for(const k in attrs) e.setAttribute(k, attrs[k]);
+    if(parent) parent.appendChild(e);
+    return e;
+  }
+
+  function drawTransformerIcon(g, x, y, color){
+    el('circle', {cx:x-6, cy:y, r:8, fill:'none', stroke:color, 'stroke-width':1.6}, g);
+    el('circle', {cx:x+6, cy:y, r:8, fill:'none', stroke:color, 'stroke-width':1.6}, g);
+  }
+
+  // Draws one or more transformers clustered just below a node — used only for transformers
+  // attached directly to that node (nodeId), which today means RMU and Tap junctions (see
+  // NODE_TX_TYPES). Multiple transformers on the same node are spaced out horizontally, centered
+  // under the node, so they don't overlap.
+  function drawNodeTaps(nodesLayer, p, stubTopY, txList){
+    if(!txList.length) return;
+    const spacing = 34;
+    const totalWidth = (txList.length - 1) * spacing;
+    txList.forEach((tx, i)=>{
+      const stubX = p.x - totalWidth/2 + i*spacing;
+      const stubBotY = stubTopY + 22;
+      const tg = el('g', {}, nodesLayer);
+      tg.style.cursor = 'pointer';
+      tg.addEventListener('click', (e)=>{ e.stopPropagation(); openTransformerModal(tx.id); });
+      if(Math.abs(stubX - p.x) > 0.5){
+        el('line', {x1:p.x, y1:stubTopY, x2:stubX, y2:stubTopY, stroke:'var(--violet)', 'stroke-width':1.2, 'stroke-dasharray':'2 2'}, tg);
+      }
+      el('line', {x1:stubX, y1:stubTopY, x2:stubX, y2:stubBotY, stroke:'var(--violet)', 'stroke-width':1.6}, tg);
+      drawTransformerIcon(tg, stubX, stubBotY+8, 'var(--violet)');
+      const tlabel = el('text', {x:stubX, y:stubBotY+30, 'text-anchor':'middle', fill:'var(--violet)',
+        'font-family':'ui-monospace, monospace', 'font-size':9.5}, tg);
+      tlabel.textContent = tx.name + (tx.capacity ? ` · ${tx.capacity}kVA` : '');
+    });
+  }
+
+  // Draws one or more transformers tapped directly onto an HT line (transformers attached via
+  // lineId, added through the "Transformers along a line" panel — distinct from a transformer
+  // attached to a node). These render along the line itself rather than at either endpoint node.
+  // Each transformer gets its own point along the line's actual span — evenly spaced using
+  // fraction (i+1)/(n+1) of the distance from p1 to p2, so 1 transformer sits at the midpoint,
+  // 2 sit at 1/3 and 2/3, 3 sit at 1/4, 1/2 and 3/4, and so on. That keeps every transformer at a
+  // distinct position along the line (no two ever land on the same spot, however many are added)
+  // instead of piling up at a single anchor point where their icons/labels would overlap.
+  // On top of that, alternate transformers branch off opposite sides of the line (right/left for a
+  // vertical run, below/above for a horizontal one) instead of all sitting on the same side — that
+  // roughly doubles the usable room around the line and keeps a busy tap point readable.
+  // On a vertical run of line (isVertical true — the common case, since a line's midpoint always
+  // falls on its vertical connecting segment whenever its two ends aren't at the same height) the
+  // spread happens down the line and each transformer branches sideways off the wire, so the tap
+  // reads as a perpendicular branch rather than a continuation of the wire. On a fully horizontal
+  // line the spread happens along the line and each transformer branches straight up or down instead.
+  function drawLineTaps(linesLayer, p1, p2, midX, txList, isVertical){
+    if(!txList.length) return;
+    const n = txList.length;
+    const branchOut = 26;
+    txList.forEach((tx, i)=>{
+      const frac = (i + 1) / (n + 1); // equally spaced along the line, never sitting on either end
+      const side = (i % 2 === 0) ? 1 : -1; // alternate which side of the line each one branches to
+      const tg = el('g', {}, linesLayer);
+      tg.style.cursor = 'pointer';
+      tg.addEventListener('click', (e)=>{ e.stopPropagation(); openTransformerModal(tx.id); });
+
+      let anchorX, anchorY, iconX, iconY, labelY;
+      if(isVertical){
+        anchorX = midX;
+        anchorY = p1.y + (p2.y - p1.y) * frac;
+        iconX = anchorX + side * branchOut;
+        iconY = anchorY;
+        labelY = iconY + 22; // label always sits below the icon, regardless of which side it's on
+      } else {
+        anchorX = p1.x + (p2.x - p1.x) * frac;
+        anchorY = p1.y; // p1.y === p2.y for a fully horizontal line
+        iconX = anchorX;
+        iconY = anchorY + side * branchOut;
+        labelY = iconY + side * 22; // keep the label moving further away from the wire, not back toward it
+      }
+      el('line', {x1:anchorX, y1:anchorY, x2:iconX, y2:iconY, stroke:'var(--violet)', 'stroke-width':1.6}, tg);
+      drawTransformerIcon(tg, iconX, iconY, 'var(--violet)');
+      const tlabel = el('text', {x:iconX, y:labelY, 'text-anchor':'middle', fill:'var(--violet)',
+        'font-family':'ui-monospace, monospace', 'font-size':9.5}, tg);
+      tlabel.textContent = tx.name + (tx.capacity ? ` · ${tx.capacity}kVA` : '');
+    });
+  }
+
+  // Small warning badge for a node with a dual-feed hazard (see hasDualFeedWarning): incoming
+  // switch closed AND a backfeed interlink also closed at the same time.
+  function drawWarningBadge(g, x, y){
+    el('path', {d:`M ${x} ${y-7} L ${x+7} ${y+6} L ${x-7} ${y+6} Z`, fill:'var(--danger)', stroke:'var(--panel)', 'stroke-width':1}, g);
+    el('text', {x, y:y+4, 'text-anchor':'middle', fill:'var(--panel)', 'font-family':'ui-monospace, monospace', 'font-size':9, 'font-weight':700}, g).textContent = '!';
+  }
+
+  function renderDiagram(){
+    svg.innerHTML = '';
+    const {positions, totalHeight} = computeLayout();
+    const {full: energized, primary: primaryEnergized} = computePowerFlow();
+    const maxDepth = Math.max(1, ...state.nodes.map(n=>{
+      const p = positions[n.id]; return p ? p.x : 0;
+    }));
+    const width = Math.max(700, maxDepth + 260);
+    const height = Math.max(320, totalHeight + 60);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    if(fitToScreen){
+      // Let the SVG's own viewBox scaling (preserveAspectRatio defaults to "xMidYMid meet") shrink
+      // or grow the whole network to fit inside the visible canvas area, with no scrolling needed —
+      // filling the wrap's on-screen box rather than sizing to the content's natural pixel size.
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+      svg.style.maxWidth = '100%';
+      svg.style.maxHeight = '100%';
+    } else {
+      // "World view": the SVG is sized to its natural content dimensions (times the manual zoom
+      // level), so #canvas-wrap's overflow:auto lets the user scroll/pan around a big network.
+      svg.style.maxWidth = 'none';
+      svg.style.maxHeight = 'none';
+      svg.setAttribute('width', width * zoomLevel);
+      svg.setAttribute('height', height * zoomLevel);
+    }
+
+    const linesLayer = el('g', {}, svg);
+    const nodesLayer = el('g', {}, svg);
+
+    // edges
+    for(const line of state.lines){
+      const p1 = positions[line.fromNodeId], p2 = positions[line.toNodeId];
+      if(!p1 || !p2) continue;
+      const feeder = feederById(line.feederId);
+      const feederOff = feeder && feeder.state === 'Off';
+      const fromNode = nodeById(line.fromNodeId);
+      const fv = fromNode ? fromVertexKey(fromNode) : null;
+      const isLive = fv && energized.has(fv);
+      const isReversed = isLive && !primaryEnergized.has(fv);
+      const bayOpen = line.breakerState === 'Open';
+
+      let color, dash, opacity;
+      if(bayOpen){ color = 'var(--disabled)'; dash = '3 3'; opacity = 0.55; }
+      else if(isReversed){ color = 'var(--backfeed)'; dash = 'none'; opacity = 0.95; }
+      else if(isLive){ color = 'var(--live)'; dash = 'none'; opacity = 0.95; }
+      else if(feederOff){ color = 'var(--feeder-off)'; dash = '5 4'; opacity = 0.6; }
+      else { color = 'var(--isolated)'; dash = 'none'; opacity = 0.7; }
+
+      // When a node has more than one outgoing line (several bays off the same RMU, several taps
+      // off the same AB, etc.), they'd otherwise all share the exact same start point and the same
+      // bend column — so multiple genuinely distinct lines would render pixel-for-pixel on top of
+      // each other and look like a single line. Fan them out instead: each sibling line gets its
+      // own small vertical lane right after the parent and its own bend (elbow) x-position, so every
+      // line — and its label, arrow, and any tapped transformers — stays visually separate along its
+      // whole length. A node with only one outgoing line is unaffected (fanOffset stays 0, same
+      // routing as before).
+      const siblingLines = childLinesOf(line.fromNodeId);
+      const fanCount = siblingLines.length;
+      const fanIndex = siblingLines.findIndex(l => l.id === line.id);
+      const fanOffset = fanCount > 1 ? (fanIndex - (fanCount - 1) / 2) : 0;
+      const LANE_Y = 8, LANE_X = 20;
+      const trunkY = p1.y + fanOffset * LANE_Y;
+      const bendX = p1.x + (p2.x - p1.x) / 2 + fanOffset * LANE_X;
+
+      const path = `M ${p1.x} ${p1.y} V ${trunkY} H ${bendX} V ${p2.y} H ${p2.x}`;
+      el('path', {d:path, fill:'none', stroke:color, 'stroke-width': isLive ? 2.4 : 2, opacity, 'stroke-dasharray': dash}, linesLayer);
+
+      if(isLive){
+        const arrowX = bendX + (p2.x - bendX)/2;
+        const arrowY = p2.y;
+        const tip = isReversed ? arrowX - 6 : arrowX + 6;
+        const base = isReversed ? arrowX + 5 : arrowX - 5;
+        el('path', {d:`M ${base} ${arrowY-4} L ${tip} ${arrowY} L ${base} ${arrowY+4} Z`, fill:color}, linesLayer);
+      }
+
+      const t = el('text', {x:bendX, y: trunkY - 8, 'text-anchor':'middle', fill: bayOpen ? 'var(--disabled)' : 'var(--muted)',
+        'font-family':'ui-monospace, monospace', 'font-size':10}, linesLayer);
+      t.textContent = line.name + (bayOpen ? ' (BAY OPEN)' : '');
+
+      // Transformers tapped directly onto this line (attached via lineId, not to either endpoint
+      // node) render along the line itself, evenly spaced so multiple ones never overlap — see
+      // drawLineTaps. Exception: if this line ends at a Tap and carries exactly one transformer,
+      // that single transformer is drawn at the Tap node instead (see the Tap branch in the node
+      // loop below) — a Tap is physically the one pole the transformer sits on, so with only one
+      // transformer to place it reads more naturally anchored to that point than floating on the
+      // line. With more than one transformer on the line, they still render along the line itself,
+      // since a Tap can only visually anchor one. Node-attached transformers (nodeId) are handled
+      // separately in the node loop regardless.
+      const lineTx = txsOnLine(line.id);
+      const toNode = nodeById(line.toNodeId);
+      const singleTapTx = toNode && toNode.breakerType === 'Tap' && lineTx.length === 1;
+      if(lineTx.length && !singleTapTx){
+        // Anchor tap placement to the line's actual rendered run (post fan-out) rather than the
+        // original p1/p2 — the main vertical run is now from trunkY to p2.y at x=bendX, unless the
+        // fan offset is zero and the line is genuinely flat, in which case it's the final approach
+        // segment from bendX to p2.x.
+        const isVertical = trunkY !== p2.y;
+        if(isVertical){
+          drawLineTaps(linesLayer, {x:bendX, y:trunkY}, {x:bendX, y:p2.y}, bendX, lineTx, true);
+        } else {
+          drawLineTaps(linesLayer, {x:bendX, y:p2.y}, {x:p2.x, y:p2.y}, bendX, lineTx, false);
+        }
+      }
+    }
+
+    // ring interlinks (dashed, drawn between two existing nodes, possibly across feeders)
+    for(const interlink of state.interlinks){
+      const p1 = positions[interlink.nodeAId], p2 = positions[interlink.nodeBId];
+      if(!p1 || !p2) continue;
+      const a = nodeById(interlink.nodeAId), b = nodeById(interlink.nodeBId);
+      const isClosed = interlink.switchState === 'NC';
+      const avKey = a ? fromVertexKey(a) : null, bvKey = b ? fromVertexKey(b) : null;
+      const isLive = isClosed && ((avKey && energized.has(avKey)) || (bvKey && energized.has(bvKey)));
+      const interlinkColor = isLive ? 'var(--live)' : 'var(--interlink)';
+
+      const midX = (p1.x + p2.x)/2, midY = (p1.y + p2.y)/2;
+      el('path', {d:`M ${p1.x} ${p1.y} L ${midX} ${midY} L ${p2.x} ${p2.y}`,
+        fill:'none', stroke:interlinkColor, 'stroke-width': isLive ? 2.2 : 1.8, 'stroke-dasharray':'5 4', opacity: isLive ? 0.95 : 0.75}, linesLayer);
+
+      if(isLive){
+        // backfeed direction: from whichever side was primarily energized without this interlink, into the other
+        const aPrimary = avKey && primaryEnergized.has(avKey);
+        const bPrimary = bvKey && primaryEnergized.has(bvKey);
+        if(aPrimary !== bPrimary){
+          const from = aPrimary ? p1 : p2, to = aPrimary ? p2 : p1;
+          const t = 0.5, ax = from.x + (to.x-from.x)*t, ay = from.y + (to.y-from.y)*t;
+          const dx = to.x-from.x, dy = to.y-from.y, len = Math.hypot(dx,dy)||1;
+          const ux = dx/len, uy = dy/len;
+          const tipX = ax+ux*7, tipY = ay+uy*7;
+          const b1x = ax-uy*4-ux*5, b1y = ay+ux*4-uy*5, b2x = ax+uy*4-ux*5, b2y = ay-ux*4-uy*5;
+          el('path', {d:`M ${b1x} ${b1y} L ${tipX} ${tipY} L ${b2x} ${b2y} Z`, fill:interlinkColor}, linesLayer);
+        }
+      }
+
+      const g = el('g', {}, linesLayer);
+      // Only an interlink explicitly marked switchable (a real physical switch on the interlink — the
+      // rare case) opens the popup on click. The normal case has no switch on the interlink at all, so
+      // there's nothing to operate there; it's opened/closed via the AB switches at its endpoints
+      // instead, and the diamond is purely informational (not clickable).
+      if(interlink.switchable){
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', ()=>showInterlinkInspector(interlink));
+      }
+      const r = 8;
+      const diamond = `M ${midX} ${midY-r} L ${midX+r} ${midY} L ${midX} ${midY+r} L ${midX-r} ${midY} Z`;
+      el('path', {d:diamond, fill: isClosed ? interlinkColor : 'var(--panel)', stroke:interlinkColor, 'stroke-width':1.8}, g);
+      const t = el('text', {x:midX, y:midY-14, 'text-anchor':'middle', fill:interlinkColor,
+        'font-family':'ui-monospace, monospace', 'font-size':10}, g);
+      t.textContent = `${interlink.name} · ${interlink.switchState}`;
+    }
+
+    // nodes
+    for(const node of state.nodes){
+      const p = positions[node.id];
+      if(!p) continue;
+      const g = el('g', {}, nodesLayer);
+      g.style.cursor = 'pointer';
+      if(node.breakerType === 'AB'){
+        // AB gets a different click contract than other breaker types: a single click just
+        // toggles Open/Closed (the everyday action), while a double-click brings up the full
+        // details popup instead. A short timer distinguishes the two — if a second click lands
+        // within the window we cancel the pending toggle entirely and treat it as a double-click,
+        // so double-clicking never also flips the switch.
+        let clickTimer = null;
+        g.addEventListener('click', ()=>{
+          if(clickTimer){
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            showInspector(node);
+          } else {
+            clickTimer = setTimeout(()=>{
+              clickTimer = null;
+              toggleNodeState(node.id);
+            }, 250);
+          }
+        });
+      } else {
+        g.addEventListener('click', ()=>showInspector(node));
+      }
+
+      if(node.kind === 'source'){
+        const feeder = feederById(node.feederId);
+        const feederOff = feeder && feeder.state === 'Off';
+        const color = SOURCE_COLOR;
+        const srcOpacity = feederOff ? 0.35 : 1;
+        el('rect', {x:p.x-16, y:p.y-14, width:32, height:28, rx:5, fill:'var(--panel)', stroke:color, 'stroke-width':2, opacity: srcOpacity, 'stroke-dasharray': feederOff ? '4 3' : 'none'}, g);
+        el('path', {d:`M ${p.x-4} ${p.y-8} L ${p.x+3} ${p.y-1} L ${p.x-2} ${p.y-1} L ${p.x+5} ${p.y+8}`,
+          fill:'none', stroke:color, 'stroke-width':1.8, opacity: srcOpacity, 'stroke-linejoin':'round', 'stroke-linecap':'round'}, g);
+        const label = el('text', {x:p.x, y:p.y+34, 'text-anchor':'middle', fill:'var(--muted)', opacity: feederOff ? 0.55 : 1,
+          'font-family':'ui-monospace, monospace', 'font-size':10}, g);
+        label.textContent = node.label + (feederOff ? '  (OFF)' : '');
+      } else if(node.breakerType === 'AB'){
+        const isOpen = node.state === 'Open';
+        // Per single-line-diagram convention: the AB box itself always reads as "live" — open vs
+        // closed is conveyed by the switch blade's orientation instead of graying the icon out.
+        // Closed: the blade lines up with the HT line passing through here (current flows straight
+        // through). Open: the blade rotates 90° off that alignment, as if swung clear of the line.
+        const abColor = 'var(--blue)';
+        el('rect', {x:p.x-AB_HALF, y:p.y-AB_HALF, width:AB_HALF*2, height:AB_HALF*2, rx:3,
+          fill:'var(--panel)', stroke:abColor, 'stroke-width':2}, g);
+
+        // Every line in this diagram is routed as an elbow (see the edges loop: "V trunkY H bendX
+        // V p2.y H p2.x") that always docks into its target node on a final horizontal ("H") run,
+        // no matter how the middle of the line jogs vertically to route around sibling branches.
+        // So the HT line always presents horizontally right at the switch itself. Closed: the blade
+        // lines up with that horizontal run. Open: the blade rotates 90° to vertical.
+        const bladeIsVertical = isOpen;
+        const bladeHalf = 9;
+        const b1x = bladeIsVertical ? p.x : p.x - bladeHalf;
+        const b1y = bladeIsVertical ? p.y - bladeHalf : p.y;
+        const b2x = bladeIsVertical ? p.x : p.x + bladeHalf;
+        const b2y = bladeIsVertical ? p.y + bladeHalf : p.y;
+        el('line', {x1:b1x, y1:b1y, x2:b2x, y2:b2y, stroke:abColor, 'stroke-width':2, 'stroke-linecap':'round'}, g);
+
+        const label = el('text', {x:p.x, y:p.y+34, 'text-anchor':'middle', fill: isOpen ? 'var(--disabled)' : 'var(--muted)',
+          'font-family':'ui-monospace, monospace', 'font-size':10}, g);
+        label.textContent = node.label + (isOpen ? '  (OPEN)' : '');
+        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+AB_HALF+4, p.y-AB_HALF-2);
+        // AB has no node-attached transformer capability (see NODE_TX_TYPES) — any transformer on
+        // its incoming line now renders on that line itself, not clustered here.
+      } else if(node.breakerType === 'RMU'){
+        const isOpen = node.state === 'Open';
+        const rmuColor = isOpen ? 'var(--disabled)' : 'var(--amber)';
+        el('circle', {cx:p.x, cy:p.y, r:NODE_R, fill:'var(--panel)', stroke:rmuColor, 'stroke-width':2, 'stroke-dasharray': isOpen ? '4 3' : 'none'}, g);
+        el('circle', {cx:p.x, cy:p.y, r:9, fill:'none', stroke:rmuColor, 'stroke-width':1.6}, g);
+        const label = el('text', {x:p.x, y:p.y+34, 'text-anchor':'middle', fill: isOpen ? 'var(--disabled)' : 'var(--muted)',
+          'font-family':'ui-monospace, monospace', 'font-size':10}, g);
+        label.textContent = node.label + (isOpen ? '  (OPEN)' : '');
+        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+NODE_R-4, p.y-NODE_R+4);
+
+        // Only a transformer attached directly to this RMU node renders here — one tapped onto its
+        // incoming line instead renders on that line itself (see the edges loop above).
+        const rmuNodeTx = txOfNode(node.id);
+        drawNodeTaps(nodesLayer, p, p.y+NODE_R, rmuNodeTx ? [rmuNodeTx] : []);
+      } else if(node.breakerType === 'Split'){
+        // Fixed joint — no switch, so no open/closed styling. Plain filled dot marks a loop-forming fork.
+        const splitColor = 'var(--split)';
+        el('circle', {cx:p.x, cy:p.y, r:10, fill:splitColor, stroke:'var(--panel)', 'stroke-width':1.6}, g);
+        const label = el('text', {x:p.x, y:p.y+28, 'text-anchor':'middle', fill:'var(--muted)',
+          'font-family':'ui-monospace, monospace', 'font-size':10}, g);
+        label.textContent = node.label;
+        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+9, p.y-9);
+        // Split has no node-attached transformer capability — any transformer on its incoming
+        // line now renders on that line itself, not clustered here.
+      } else { // Tap — fixed branch off an AB/RMU/Split; may dead-end or continue further lines.
+        const tapColor = 'var(--tap)';
+        const half = 9;
+        const tri = `M ${p.x} ${p.y-half} L ${p.x+half} ${p.y+half} L ${p.x-half} ${p.y+half} Z`;
+        el('path', {d:tri, fill:'var(--panel)', stroke:tapColor, 'stroke-width':2, 'stroke-linejoin':'round'}, g);
+        const label = el('text', {x:p.x, y:p.y+32, 'text-anchor':'middle', fill:'var(--muted)',
+          'font-family':'ui-monospace, monospace', 'font-size':10}, g);
+        label.textContent = node.label;
+        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+half, p.y-half);
+
+        // A transformer attached directly to this Tap node always renders here. One tapped onto
+        // its incoming line (lineId) also renders here instead of on the line itself, but only
+        // when that line carries exactly one transformer — a Tap is one physical pole, so it can
+        // only stand in for a single transformer; with more than one, they stay on the line (see
+        // the "singleTapTx" check in the edges loop above).
+        const tapNodeTx = txOfNode(node.id);
+        const tapIncoming = state.lines.find(l=>l.toNodeId===node.id);
+        const tapIncomingTx = tapIncoming ? txsOnLine(tapIncoming.id) : [];
+        const tapTxList = [
+          ...(tapNodeTx ? [tapNodeTx] : []),
+          ...(tapIncomingTx.length === 1 ? tapIncomingTx : [])
+        ];
+        drawNodeTaps(nodesLayer, p, p.y+half+6, tapTxList);
+      }
+    }
+  }
+
+  // Keeps the floating inspector panel inside the visible viewport. #inspector is position:fixed
+  // (viewport-relative), so on desktop we align it just under the header/tabs each time it opens —
+  // otherwise, on a big scrolled-around network, it could open above/beside the visible area.
+  // On mobile the CSS media query takes over as a bottom sheet, so we leave "top" alone there.
+  function positionInspector(box){
+    if(window.matchMedia('(max-width: 860px)').matches){
+      box.style.top = '';
+      return;
+    }
+    const wrap = document.getElementById('canvas-wrap');
+    const rect = wrap.getBoundingClientRect();
+    box.style.top = Math.max(12, rect.top + 12) + 'px';
+  }
+
+  function showInterlinkInspector(interlink){
+    const box = document.getElementById('inspector');
+    const a = nodeById(interlink.nodeAId), b = nodeById(interlink.nodeBId);
+    const fa = a ? feederById(a.feederId) : null;
+    const fb = b ? feederById(b.feederId) : null;
+    const isClosed = interlink.switchState === 'NC';
+    let rows = '';
+    rows += `<div class="row"><span>Node A</span><b>${a?a.label:'—'}${fa?' ('+fa.name+')':''}</b></div>`;
+    rows += `<div class="row"><span>Node B</span><b>${b?b.label:'—'}${fb?' ('+fb.name+')':''}</b></div>`;
+    rows += `<div class="row"><span>Switch</span><b>${interlink.breakerType}</b></div>`;
+    rows += `<div class="row"><span>State</span><b>${isClosed ? 'Closed (feeding through)' : 'Open'}</b></div>`;
+    const toggleLabel = isClosed ? 'Open interlink (restore normal)' : 'Close interlink (backfeed)';
+    const toggleBtn = `<button class="btn-secondary" style="margin-top:10px;width:100%;" id="inspector-interlink-toggle">${toggleLabel}</button>`;
+    const delBtn = `<button class="btn-danger" style="margin-top:8px;width:100%;" id="inspector-del">Delete this interlink</button>`;
+    box.innerHTML = `<span class="close" id="inspector-close">✕</span><h3>${interlink.name}</h3>${rows}${toggleBtn}${delBtn}`;
+    box.style.display = 'block';
+    positionInspector(box);
+    document.getElementById('inspector-close').onclick = ()=>{ box.style.display='none'; };
+    document.getElementById('inspector-interlink-toggle').onclick = ()=>{
+      box.style.display='none';
+      toggleInterlinkState(interlink.id);
+    };
+    document.getElementById('inspector-del').onclick = ()=>{
+      box.style.display='none';
+      deleteInterlink(interlink.id);
+    };
+  }
+
+  function showInspector(node){
+    const box = document.getElementById('inspector');
+    const feeder = feederById(node.feederId);
+    if(node.kind === 'source' && feeder){
+      const isOff = feeder.state === 'Off';
+      let rows = '';
+      rows += `<div class="row"><span>Status</span><b style="color:${isOff?'var(--danger)':'var(--teal)'}">${isOff ? 'Switched OFF' : 'Switched ON'}</b></div>`;
+      rows += `<div class="row"><span>Voltage</span><b>${feeder.kv ? feeder.kv+' kV' : '—'}</b></div>`;
+      rows += `<div class="row"><span>Location</span><b>${feeder.location||'—'}</b></div>`;
+      rows += `<div class="row"><span>Contact</span><b>${feeder.poc||'—'}</b></div>`;
+      rows += `<div class="row"><span>Last tripped</span><b>${formatDateTime(feeder.lastTripped)}</b></div>`;
+      const risksRow = feeder.risks ? `<div class="row" style="flex-direction:column;align-items:flex-start;gap:2px;"><span>Known risks</span><b style="white-space:normal;text-align:left;">${feeder.risks}</b></div>` : '';
+      const toggleLabel = isOff ? 'Switch feeder ON' : 'Switch feeder OFF';
+      box.innerHTML = `<span class="close" id="inspector-close">✕</span><h3>${feeder.name}</h3>${rows}${risksRow}
+        <button class="${isOff?'btn-primary':'btn-danger'}" style="margin-top:12px;width:100%;${isOff?'':'padding:9px 14px;'}" id="inspector-feeder-power">${toggleLabel}</button>
+        <button class="btn-secondary" style="margin-top:8px;width:100%;" id="inspector-edit-feeder">Edit feeder details</button>`;
+      box.style.display = 'block';
+      positionInspector(box);
+      document.getElementById('inspector-close').onclick = ()=>{ box.style.display='none'; };
+      document.getElementById('inspector-feeder-power').onclick = ()=>{
+        box.style.display='none';
+        toggleFeederState(feeder.id);
+      };
+      document.getElementById('inspector-edit-feeder').onclick = ()=>{
+        box.style.display='none';
+        openFeederModal(feeder.id);
+      };
+      return;
+    }
+    const incoming = state.lines.find(l=>l.toNodeId===node.id);
+    const tx = txOfNode(node.id);
+    const isSwitchable = SWITCHABLE_TYPES.has(node.breakerType);
+    // Touching interlinks (and the dual-feed warning they can trigger) apply to every junction type —
+    // a Split or Tap has no switch of its own, but a ring interlink can still land on it and create the
+    // same unsynchronized-dual-feed hazard as at an AB/RMU.
+    const touchingInterlinks = interlinksTouchingNode(node.id);
+    const closedTouchingInterlinks = touchingInterlinks.filter(t=>t.switchState==='NC');
+    const dualFeedWarning = hasDualFeedWarning(node);
+    let rows = '';
+    rows += `<div class="row"><span>Feeder</span><b>${feeder?feeder.name:'—'}</b></div>`;
+    rows += `<div class="row"><span>Kind</span><b>${node.kind==='source'?'Source':node.breakerType}</b></div>`;
+    rows += `<div class="row"><span>State</span><b>${isSwitchable ? (node.state||'Closed') : 'Fixed (no switch)'}</b></div>`;
+    if(incoming) rows += `<div class="row"><span>Fed via</span><b>${incoming.name}</b></div>`;
+    if(tx){
+      rows += `<div class="row"><span>Transformer</span><b>${tx.name}</b></div>`;
+      rows += `<div class="row"><span>Capacity</span><b>${tx.capacity||'—'} kVA</b></div>`;
+    }
+    const bays = node.breakerType === 'RMU' ? bayLinesOf(node.id) : [];
+    const hasMultipleFeeds = bays.length > 0 || touchingInterlinks.length > 0;
+    const toggleBtn = isSwitchable
+      ? `<button class="btn-secondary" style="margin-top:10px;width:100%;" id="inspector-toggle-state">Mark ${hasMultipleFeeds ? 'incoming' : ''} as ${node.state==='Open' ? 'Closed' : 'Open'}</button>`
+      : '';
+
+    let warningHtml = '';
+    if(dualFeedWarning){
+      warningHtml = `<div class="row" style="background:rgba(242,101,122,.14);border:1px solid rgba(242,101,122,.4);border-radius:6px;padding:8px;margin-top:10px;flex-direction:column;align-items:flex-start;gap:2px;">
+        <b style="color:var(--danger);">⚠ Dual feed</b>
+        <span style="color:var(--text);white-space:normal;">Incoming is Closed and ${closedTouchingInterlinks.length>1?'a backfeed interlink is':'a backfeed interlink ('+closedTouchingInterlinks[0].name+') is'} also Closed. Verify sources are synchronized before running both.</span>
+      </div>`;
+    }
+
+    let interlinksHtml = '';
+    if(touchingInterlinks.length){
+      interlinksHtml += `<p class="section-title" style="margin:14px 0 8px;">Incoming interlinks / backfeed (${touchingInterlinks.length})</p>`;
+      for(const interlink of touchingInterlinks){
+        const otherId = interlink.nodeAId === node.id ? interlink.nodeBId : interlink.nodeAId;
+        const other = nodeById(otherId);
+        const otherFeeder = other ? feederById(other.feederId) : null;
+        const interlinkClosed = interlink.switchState === 'NC';
+        const otherLabel = other ? other.label : '—';
+        const otherFeederLabel = otherFeeder ? ` (${otherFeeder.name})` : '';
+        interlinksHtml += `<div class="row"><span>${interlink.name} ↔ ${otherLabel}${otherFeederLabel}</span><b style="color:${interlinkClosed?'var(--danger)':'var(--teal)'}">${interlinkClosed?'Closed':'Open'}</b></div>`;
+        interlinksHtml += `<button class="btn-secondary" data-incoming-interlink-id="${interlink.id}" style="margin-top:2px;margin-bottom:8px;width:100%;font-size:11.5px;padding:6px 10px;">${interlinkClosed ? 'Open (stop backfeed)' : 'Close (backfeed)'}</button>`;
+      }
+    }
+
+    let baysHtml = '';
+    if(bays.length){
+      baysHtml += `<p class="section-title" style="margin:14px 0 8px;">Outgoing bays (${bays.length})</p>`;
+      for(const bay of bays){
+        const toNode = nodeById(bay.toNodeId);
+        const bayOpen = bay.breakerState === 'Open';
+        const toLabel = toNode ? toNode.label : '—';
+        baysHtml += `<div class="row"><span>${bay.name} → ${toLabel}</span><b style="color:${bayOpen?'var(--danger)':'var(--teal)'}">${bayOpen?'Open':'Closed'}</b></div>`;
+        baysHtml += `<button class="btn-secondary" data-bay-id="${bay.id}" style="margin-top:2px;margin-bottom:8px;width:100%;font-size:11.5px;padding:6px 10px;">${bayOpen ? 'Close' : 'Open'} bay to ${toLabel}</button>`;
+      }
+    }
+    let delBtn = '';
+    if(incoming){
+      delBtn = `<button class="btn-danger" style="margin-top:8px;width:100%;" id="inspector-del">Delete this branch</button>`;
+    }
+    box.innerHTML = `<span class="close" id="inspector-close">✕</span><h3>${node.label}</h3>${rows}${toggleBtn}${warningHtml}${interlinksHtml}${baysHtml}${delBtn}`;
+    box.style.display = 'block';
+    positionInspector(box);
+    document.getElementById('inspector-close').onclick = ()=>{ box.style.display='none'; };
+    if(isSwitchable){
+      document.getElementById('inspector-toggle-state').onclick = ()=>{
+        box.style.display='none';
+        toggleNodeState(node.id);
+      };
+    }
+    box.querySelectorAll('[data-bay-id]').forEach(btn=>{
+      btn.onclick = ()=>{
+        box.style.display='none';
+        toggleLineBayState(btn.dataset.bayId);
+      };
+    });
+    box.querySelectorAll('[data-incoming-interlink-id]').forEach(btn=>{
+      btn.onclick = ()=>{
+        box.style.display='none';
+        toggleInterlinkState(btn.dataset.incomingInterlinkId);
+      };
+    });
+    if(incoming){
+      document.getElementById('inspector-del').onclick = ()=>{
+        if(confirm(`Delete branch "${node.label}" (line "${incoming.name}")? This also removes everything downstream of it.`)){
+          box.style.display='none';
+          deleteLine(incoming.id);
+        }
+      };
+    }
+  }
+
+  function formatDateTime(v){
+    if(!v) return '—';
+    const d = new Date(v);
+    if(isNaN(d.getTime())) return v;
+    return d.toLocaleString(undefined, {year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
+
+  // Collapsed state for the legend box — plain in-memory flag (like the section heading's
+  // collapse toggle), so it resets to expanded on reload rather than persisting.
+  let legendCollapsed = false;
+
+  function renderLegend(){
+    const legend = document.getElementById('legend');
+    legend.innerHTML = `
+      <div class="legend-header" id="legend-header" title="Click to collapse or expand the legend">
+        <span class="legend-title">Legend</span>
+        <span class="chev" id="legend-chev">${legendCollapsed ? '▸ expand' : '▾ collapse'}</span>
+      </div>
+      <div class="legend-items" id="legend-items" style="display:${legendCollapsed ? 'none' : 'flex'};">
+        <div class="item"><svg width="20" height="20"><rect x="2" y="3" width="16" height="14" rx="3" fill="none" stroke="var(--teal)" stroke-width="2"/></svg> Source</div>
+        <div class="item"><svg width="20" height="20"><rect x="3" y="3" width="14" height="14" rx="2" fill="none" stroke="var(--blue)" stroke-width="2"/><line x1="6" y1="14" x2="14" y2="6" stroke="var(--blue)" stroke-width="2"/></svg> AB breaker</div>
+        <div class="item"><svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--amber)" stroke-width="2"/><circle cx="10" cy="10" r="3.5" fill="none" stroke="var(--amber)" stroke-width="1.4"/></svg> RMU breaker</div>
+        <div class="item"><svg width="20" height="20"><circle cx="10" cy="10" r="7" fill="var(--split)" stroke="var(--panel)" stroke-width="1.4"/></svg> Split (fixed joint)</div>
+        <div class="item"><svg width="20" height="20"><path d="M 10 3 L 16 15 L 4 15 Z" fill="var(--panel)" stroke="var(--tap)" stroke-width="2" stroke-linejoin="round"/></svg> Tap (fixed branch)</div>
+        <div class="item"><svg width="20" height="20"><circle cx="7" cy="10" r="6" fill="none" stroke="var(--violet)" stroke-width="1.6"/><circle cx="13" cy="10" r="6" fill="none" stroke="var(--violet)" stroke-width="1.6"/></svg> Transformer</div>
+        <div class="item"><svg width="24" height="20"><line x1="2" y1="10" x2="22" y2="10" stroke="var(--interlink)" stroke-width="1.8" stroke-dasharray="4 3"/><path d="M 12 5 L 17 10 L 12 15 L 7 10 Z" fill="var(--panel)" stroke="var(--interlink)" stroke-width="1.6"/></svg> Ring interlink</div>
+        <div class="item"><svg width="24" height="20"><line x1="2" y1="10" x2="16" y2="10" stroke="var(--live)" stroke-width="2.4"/><path d="M 15 6 L 22 10 L 15 14 Z" fill="var(--live)"/></svg> Live (current flowing)</div>
+        <div class="item"><svg width="24" height="20"><line x1="2" y1="10" x2="16" y2="10" stroke="var(--backfeed)" stroke-width="2.4"/><path d="M 15 6 L 22 10 L 15 14 Z" fill="var(--backfeed)"/></svg> Backfeed (via ring interlink)</div>
+        <div class="item"><svg width="24" height="20"><line x1="2" y1="10" x2="22" y2="10" stroke="var(--isolated)" stroke-width="2"/></svg> Isolated (no current)</div>
+        <div class="item"><svg width="24" height="20"><line x1="2" y1="10" x2="22" y2="10" stroke="var(--feeder-off)" stroke-width="2" stroke-dasharray="5 4"/></svg> Feeder off</div>
+        <div class="item"><svg width="24" height="20"><line x1="2" y1="10" x2="22" y2="10" stroke="var(--disabled)" stroke-width="2" stroke-dasharray="3 3"/></svg> RMU bay open</div>
+        <div class="item"><svg width="20" height="20"><path d="M 10 4 L 17 16 L 3 16 Z" fill="var(--danger)" stroke="var(--panel)" stroke-width="1"/><text x="10" y="14" text-anchor="middle" font-family="ui-monospace, monospace" font-size="9" font-weight="700" fill="var(--panel)">!</text></svg> Dual feed warning</div>
+      </div>
+    `;
+    document.getElementById('legend-header').addEventListener('click', ()=>{
+      legendCollapsed = !legendCollapsed;
+      renderLegend();
+    });
+  }
+
+  // ---------- forms ----------
+  function renderFeederList(){
+    const list = document.getElementById('feeder-list');
+    if(state.feeders.length===0){
+      list.innerHTML = '<p class="empty-hint">No feeders yet. Add one above to start the network.</p>';
+      return;
+    }
+    list.innerHTML = '';
+    for(const f of state.feeders){
+      const isOff = f.state === 'Off';
+      const chip = document.createElement('div');
+      chip.className = 'feeder-chip';
+      chip.dataset.id = f.id;
+      chip.style.cursor = 'pointer';
+      if(isOff) chip.style.opacity = '0.55';
+      const kvBadge = f.kv ? ` <span style="color:var(--muted);">· ${f.kv}kV</span>` : '';
+      const offBadge = isOff ? ` <span style="color:var(--danger);">· OFF</span>` : '';
+      chip.innerHTML = `<span class="dot" style="background:${f.color}"></span><span class="name">${f.name}${kvBadge}${offBadge}</span>`;
+      chip.title = 'Click to view / edit feeder details';
+      chip.addEventListener('click', ()=>openFeederModal(f.id));
+      const power = document.createElement('button');
+      power.className = 'btn-ghost'; power.textContent = isOff ? '⏻ On' : '⏻ Off';
+      power.style.padding = '4px 8px'; power.style.fontSize = '11px';
+      power.title = isOff ? 'Switch feeder ON' : 'Switch feeder OFF';
+      power.addEventListener('click', (e)=>{ e.stopPropagation(); toggleFeederState(f.id); });
+      chip.appendChild(power);
+      const del = document.createElement('button');
+      del.className = 'btn-danger'; del.textContent = '✕';
+      del.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if(confirm(`Delete feeder "${f.name}" and its entire network?`)) deleteFeeder(f.id);
+      });
+      chip.appendChild(del);
+      list.appendChild(chip);
+    }
+  }
+
+  function openFeederModal(feederId){
+    const f = feederById(feederId);
+    if(!f) return;
+    const isOff = f.state === 'Off';
+    const backdrop = document.getElementById('feeder-modal-backdrop');
+    const modal = document.getElementById('feeder-modal');
+    modal.innerHTML = `
+      <span class="close" id="feeder-modal-close">✕</span>
+      <h2>${f.name}</h2>
+      <p class="modal-sub">Feeder details · <span style="color:${isOff?'var(--danger)':'var(--teal)'}">${isOff ? 'SWITCHED OFF' : 'SWITCHED ON'}</span></p>
+      <label>Feeder / source name</label>
+      <input type="text" id="edit-feeder-name" value="${escapeAttr(f.name)}">
+      <label>Voltage (kV)</label>
+      <input type="number" id="edit-feeder-kv" value="${escapeAttr(f.kv)}" step="0.1">
+      <label>Location identification</label>
+      <input type="text" id="edit-feeder-location" value="${escapeAttr(f.location)}">
+      <label>Nearest point of contact (dept.)</label>
+      <input type="text" id="edit-feeder-poc" value="${escapeAttr(f.poc)}">
+      <label>Known risks / remarks</label>
+      <input type="text" id="edit-feeder-risks" value="${escapeAttr(f.risks)}">
+      <label>Last tripped</label>
+      <input type="datetime-local" id="edit-feeder-last-tripped" value="${escapeAttr(f.lastTripped)}">
+      <button class="${isOff?'btn-primary':'btn-danger'}" style="margin-top:14px;width:100%;" id="feeder-modal-power">${isOff ? 'Switch feeder ON' : 'Switch feeder OFF'}</button>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="feeder-modal-cancel">Cancel</button>
+        <button class="btn-danger" style="flex:1;" id="feeder-modal-delete">Delete feeder</button>
+        <button class="btn-primary" style="margin-top:0;" id="feeder-modal-save">Save</button>
+      </div>
+    `;
+    backdrop.style.display = 'flex';
+    document.getElementById('feeder-modal-close').onclick = closeModal;
+    document.getElementById('feeder-modal-cancel').onclick = closeModal;
+    backdrop.onclick = (e)=>{ if(e.target === backdrop) closeModal(); };
+    document.getElementById('feeder-modal-power').onclick = ()=>{
+      closeModal();
+      toggleFeederState(f.id);
+    };
+    document.getElementById('feeder-modal-delete').onclick = ()=>{
+      if(confirm(`Delete feeder "${f.name}" and its entire network?`)){
+        closeModal();
+        deleteFeeder(f.id);
+      }
+    };
+    document.getElementById('feeder-modal-save').onclick = async ()=>{
+      const oldName = f.name;
+      const newName = document.getElementById('edit-feeder-name').value.trim() || f.name;
+      const newKv = document.getElementById('edit-feeder-kv').value;
+      const newLocation = document.getElementById('edit-feeder-location').value.trim();
+      const newPoc = document.getElementById('edit-feeder-poc').value.trim();
+      const newRisks = document.getElementById('edit-feeder-risks').value.trim();
+      const newLastTripped = document.getElementById('edit-feeder-last-tripped').value;
+      const source = nodeById(f.sourceId);
+      const sourceFollowsName = source && source.label === oldName + " Source";
+
+      if(activeView === 'realtime'){
+        try{
+          const updated = await backend.patch(`/api/feeders/${f.id}`, {
+            name: newName, kv: newKv, location: newLocation, poc: newPoc, risks: newRisks,
+            lastTripped: newLastTripped, expectedVersion: f.version,
+          });
+          const sourceId = f.sourceId;
+          Object.assign(f, mapFeederFromServer(updated));
+          f.sourceId = sourceId;
+          if(sourceFollowsName){
+            const sourceUpdated = await backend.patch(`/api/nodes/${source.id}`, {
+              label: newName + " Source", expectedVersion: source.version,
+            });
+            Object.assign(source, mapNodeFromServer(sourceUpdated));
+          }
+        }catch(e){
+          closeModal();
+          await handleRealtimeMutationError(e, `${f.name}'s details`);
+          return;
+        }
+        closeModal();
+        renderAll();
+        return;
+      }
+
+      f.name = newName;
+      f.kv = newKv;
+      f.location = newLocation;
+      f.poc = newPoc;
+      f.risks = newRisks;
+      f.lastTripped = newLastTripped;
+      if(sourceFollowsName){
+        source.label = newName + " Source"; // only follow along if it was still the auto-generated label
+      }
+      await saveState();
+      closeModal();
+      renderAll();
+    };
+  }
+
+  function openTransformerModal(txId){
+    const tx = state.transformers.find(t=>t.id===txId);
+    if(!tx) return;
+    const backdrop = document.getElementById('feeder-modal-backdrop');
+    const modal = document.getElementById('feeder-modal');
+    let context = '';
+    if(tx.nodeId){
+      const n = nodeById(tx.nodeId);
+      context = `On RMU breaker: ${n ? n.label : '—'}`;
+    } else if(tx.lineId){
+      const l = state.lines.find(x=>x.id===tx.lineId);
+      context = `Tapped on line: ${l ? l.name : '—'}`;
+    }
+    modal.innerHTML = `
+      <span class="close" id="feeder-modal-close">✕</span>
+      <h2>${tx.name}</h2>
+      <p class="modal-sub">${context}</p>
+      <label>Transformer name</label>
+      <input type="text" id="edit-tx-name" value="${escapeAttr(tx.name)}">
+      <label>Capacity (kVA)</label>
+      <input type="number" id="edit-tx-kva" value="${escapeAttr(tx.capacity)}">
+      <label>Electrical pole name</label>
+      <input type="text" id="edit-tx-pole" value="${escapeAttr(tx.poleName)}">
+      <label>Load — R / Y / B phase (A)</label>
+      <div style="display:flex;gap:6px;">
+        <input type="number" id="edit-tx-load-r" value="${escapeAttr(tx.loadR)}" placeholder="R" style="flex:1;min-width:0;">
+        <input type="number" id="edit-tx-load-y" value="${escapeAttr(tx.loadY)}" placeholder="Y" style="flex:1;min-width:0;">
+        <input type="number" id="edit-tx-load-b" value="${escapeAttr(tx.loadB)}" placeholder="B" style="flex:1;min-width:0;">
+      </div>
+      <label>Load reading captured at</label>
+      <input type="datetime-local" id="edit-tx-load-captured" value="${escapeAttr(tx.loadCapturedAt)}">
+      <label>Last fault date/time</label>
+      <input type="datetime-local" id="edit-tx-fault-date" value="${escapeAttr(tx.lastFaultDate)}">
+      <label>Last fault reason</label>
+      <input type="text" id="edit-tx-fault-reason" value="${escapeAttr(tx.lastFaultReason)}">
+      <div class="modal-actions">
+        <button class="btn-secondary" id="feeder-modal-cancel">Cancel</button>
+        <button class="btn-danger" id="feeder-modal-delete">Delete</button>
+        <button class="btn-primary" style="margin-top:0;" id="feeder-modal-save">Save</button>
+      </div>
+    `;
+    backdrop.style.display = 'flex';
+    document.getElementById('feeder-modal-close').onclick = closeModal;
+    document.getElementById('feeder-modal-cancel').onclick = closeModal;
+    backdrop.onclick = (e)=>{ if(e.target === backdrop) closeModal(); };
+    document.getElementById('feeder-modal-delete').onclick = ()=>{
+      if(confirm(`Delete transformer "${tx.name}"?`)){
+        closeModal();
+        deleteTransformer(tx.id);
+      }
+    };
+    document.getElementById('feeder-modal-save').onclick = async ()=>{
+      const newName = document.getElementById('edit-tx-name').value.trim() || tx.name;
+      const newCapacity = Number(document.getElementById('edit-tx-kva').value) || 0;
+      const newPoleName = document.getElementById('edit-tx-pole').value.trim();
+      const rVal = document.getElementById('edit-tx-load-r').value;
+      const yVal = document.getElementById('edit-tx-load-y').value;
+      const bVal = document.getElementById('edit-tx-load-b').value;
+      const newLoadR = rVal !== '' ? Number(rVal) : '';
+      const newLoadY = yVal !== '' ? Number(yVal) : '';
+      const newLoadB = bVal !== '' ? Number(bVal) : '';
+      const newLoadCapturedAt = document.getElementById('edit-tx-load-captured').value;
+      const newFaultDate = document.getElementById('edit-tx-fault-date').value;
+      const newFaultReason = document.getElementById('edit-tx-fault-reason').value.trim();
+
+      if(activeView === 'realtime'){
+        try{
+          const updated = await backend.patch(`/api/transformers/${tx.id}`, {
+            name: newName, capacityKva: newCapacity, poleName: newPoleName,
+            loadR: newLoadR === '' ? null : newLoadR, loadY: newLoadY === '' ? null : newLoadY,
+            loadB: newLoadB === '' ? null : newLoadB, loadCapturedAt: newLoadCapturedAt || null,
+            lastFaultDate: newFaultDate || null, lastFaultReason: newFaultReason,
+          });
+          const nodeId = tx.nodeId, lineId = tx.lineId; // mapTransformerFromServer already carries these, but be explicit
+          Object.assign(tx, mapTransformerFromServer(updated));
+          tx.nodeId = tx.nodeId || nodeId;
+          tx.lineId = tx.lineId || lineId;
+        }catch(e){
+          closeModal();
+          await handleRealtimeMutationError(e, `${tx.name}'s details`);
+          return;
+        }
+        closeModal();
+        renderAll();
+        return;
+      }
+
+      tx.name = newName;
+      tx.capacity = newCapacity;
+      tx.poleName = newPoleName;
+      tx.loadR = newLoadR;
+      tx.loadY = newLoadY;
+      tx.loadB = newLoadB;
+      tx.loadCapturedAt = newLoadCapturedAt;
+      tx.lastFaultDate = newFaultDate;
+      tx.lastFaultReason = newFaultReason;
+      await saveState();
+      closeModal();
+      renderAll();
+    };
+  }
+
+  function closeModal(){
+    document.getElementById('feeder-modal-backdrop').style.display = 'none';
+  }
+
+  function escapeAttr(v){
+    return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
+
+  function tagClassForType(breakerType){
+    if(breakerType === 'RMU') return 'tag-rmu';
+    if(breakerType === 'Split') return 'tag-split';
+    if(breakerType === 'Tap') return 'tag-tap';
+    return 'tag-ab';
+  }
+
+  function nodesForFeeder(feederId){
+    return state.nodes.filter(n=>n.feederId===feederId);
+  }
+
+  function refreshLineForm(){
+    const feederSel = document.getElementById('line-feeder');
+    const fromSel = document.getElementById('line-from');
+    const addBtn = document.getElementById('add-line-btn');
+    const hint = document.getElementById('line-hint');
+
+    // Rebuilding a <select>'s innerHTML resets the browser's current selection (usually back to
+    // the first option) — so on every call (including the feeder dropdown's own "change" handler)
+    // we'd otherwise silently snap the feeder back to the first one right after the user picked a
+    // different one, and then populate "Line starts from" from the wrong feeder. Capture whichever
+    // feeder is actually selected first, rebuild, then restore it.
+    const previousFeeder = feederSel.value;
+    feederSel.innerHTML = state.feeders.map(f=>`<option value="${f.id}">${f.name}</option>`).join('');
+    if(previousFeeder && state.feeders.some(f=>f.id===previousFeeder)){
+      feederSel.value = previousFeeder;
+    }
+    const hasFeeders = state.feeders.length>0;
+    addBtn.disabled = !hasFeeders;
+    addBtn.style.opacity = hasFeeders ? '1':'0.5';
+    hint.textContent = hasFeeders ? '' : 'Add a feeder first.';
+
+    const currentFeeder = feederSel.value;
+    const nodes = currentFeeder ? nodesForFeeder(currentFeeder) : [];
+    fromSel.innerHTML = nodes.map(n=>`<option value="${n.id}">${n.label}</option>`).join('');
+    refreshBayRow();
+  }
+
+  // The "new bay state" field only makes sense when the new line springs from an RMU's busbar
+  // (each bay off an RMU is independently switchable — see toggleLineBayState).
+  function refreshBayRow(){
+    const fromSel = document.getElementById('line-from');
+    const fromNode = fromSel.value ? nodeById(fromSel.value) : null;
+    const isRmu = fromNode && fromNode.breakerType === 'RMU';
+    document.getElementById('bay-row').style.display = isRmu ? 'block' : 'none';
+    if(!isRmu) document.getElementById('bay-state').value = 'Closed';
+  }
+
+  function refreshInterlinkForm(){
+    const aSel = document.getElementById('interlink-node-a');
+    const bSel = document.getElementById('interlink-node-b');
+    const addBtn = document.getElementById('add-interlink-btn');
+    const hint = document.getElementById('interlink-hint');
+    const enough = state.nodes.length >= 2;
+    addBtn.disabled = !enough;
+    addBtn.style.opacity = enough ? '1':'0.5';
+    hint.textContent = enough ? '' : 'Add at least two breakers first.';
+
+    const optionsHtml = state.feeders.map(f=>{
+      const opts = nodesForFeeder(f.id).map(n=>`<option value="${n.id}">${n.label}</option>`).join('');
+      return `<optgroup label="${f.name}">${opts}</optgroup>`;
+    }).join('');
+    aSel.innerHTML = optionsHtml;
+    bSel.innerHTML = optionsHtml;
+  }
+
+  function refreshLineTxForm(){
+    const sel = document.getElementById('linetx-line');
+    const addBtn = document.getElementById('add-linetx-btn');
+    const hint = document.getElementById('linetx-hint');
+    const enough = state.lines.length > 0;
+    addBtn.disabled = !enough;
+    addBtn.style.opacity = enough ? '1':'0.5';
+    hint.textContent = enough ? '' : 'Add an HT line first.';
+
+    const prevValue = sel.value;
+    sel.innerHTML = state.feeders.map(f=>{
+      const opts = state.lines.filter(l=>l.feederId===f.id).map(l=>{
+        const from = nodeById(l.fromNodeId), to = nodeById(l.toNodeId);
+        const desc = `${l.name} (${from?from.label:'?'} → ${to?to.label:'?'})`;
+        return `<option value="${l.id}">${desc}</option>`;
+      }).join('');
+      return opts ? `<optgroup label="${f.name}">${opts}</optgroup>` : '';
+    }).join('');
+    if(prevValue && state.lines.some(l=>l.id===prevValue)) sel.value = prevValue;
+  }
+
+  function renderLineTxList(){
+    const container = document.getElementById('linetx-list');
+    const lineId = document.getElementById('linetx-line').value;
+    if(!lineId){ container.innerHTML = ''; return; }
+    const taps = txsOnLine(lineId);
+    if(taps.length === 0){
+      container.innerHTML = '<p class="empty-hint">No transformers tapped on this line yet.</p>';
+      return;
+    }
+    container.innerHTML = '';
+    for(const tx of taps){
+      const chip = document.createElement('div');
+      chip.className = 'feeder-chip';
+      chip.dataset.id = tx.id;
+      chip.style.cursor = 'pointer';
+      chip.innerHTML = `<span class="dot" style="background:var(--violet)"></span><span class="name">${tx.name}${tx.capacity?' · '+tx.capacity+'kVA':''}</span>`;
+      chip.title = 'Click to view / edit this transformer';
+      chip.addEventListener('click', ()=>openTransformerModal(tx.id));
+      const del = document.createElement('button');
+      del.className = 'btn-danger'; del.textContent = '✕';
+      del.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if(confirm(`Delete transformer "${tx.name}"?`)) deleteTransformer(tx.id);
+      });
+      chip.appendChild(del);
+      container.appendChild(chip);
+    }
+  }
+
+  function renderTable(){
+    const body = document.getElementById('line-table-body');
+    body.innerHTML = '';
+    const {full: energized, primary: primaryEnergized} = computePowerFlow();
+    for(const line of state.lines){
+      const feeder = feederById(line.feederId);
+      const from = nodeById(line.fromNodeId);
+      const to = nodeById(line.toNodeId);
+      const tx = txOfNode(to ? to.id : null);
+      const taps = txsOnLine(line.id);
+      const tapNote = taps.length ? ` +${taps.length} tap${taps.length>1?'s':''}` : '';
+      const feederOff = feeder && feeder.state === 'Off';
+      const fv = from ? fromVertexKey(from) : null;
+      const isLive = fv && energized.has(fv);
+      const isReversed = isLive && !primaryEnergized.has(fv);
+      const statusHtml = line.breakerState === 'Open'
+        ? `<span class="tag" style="background:rgba(91,102,112,.2);color:var(--disabled);">Bay open</span>`
+        : isReversed
+          ? `<span class="tag" style="background:rgba(198,39,58,.14);color:var(--backfeed);">Backfeed</span>`
+          : isLive
+          ? `<span class="tag" style="background:rgba(61,214,140,.14);color:var(--live);">Live</span>`
+          : feederOff
+            ? `<span class="tag" style="background:rgba(75,85,96,.2);color:var(--feeder-off);">Feeder off</span>`
+            : `<span class="tag" style="background:rgba(27,95,168,.14);color:var(--isolated);">Isolated</span>`;
+      const tr = document.createElement('tr');
+      tr.dataset.id = line.id;
+      tr.innerHTML = `
+        <td>${feeder?feeder.name:'—'}</td>
+        <td>${line.name}</td>
+        <td>${from?from.label:'—'}</td>
+        <td>${to?to.label:'—'}</td>
+        <td><span class="tag ${tagClassForType(to&&to.breakerType)}">${to?to.breakerType:''}</span></td>
+        <td>${statusHtml}</td>
+        <td>${(tx ? tx.name+(tx.capacity?` (${tx.capacity}kVA)`:'') : '—')}${tapNote}</td>
+        <td><button class="btn-danger" data-id="${line.id}">✕</button></td>
+      `;
+      tr.querySelector('button').onclick = ()=>deleteLine(line.id);
+      body.appendChild(tr);
+    }
+  }
+
+  function renderInterlinkTable(){
+    const body = document.getElementById('interlink-table-body');
+    body.innerHTML = '';
+    for(const interlink of state.interlinks){
+      const a = nodeById(interlink.nodeAId), b = nodeById(interlink.nodeBId);
+      const tr = document.createElement('tr');
+      tr.dataset.id = interlink.id;
+      // Only a switchable interlink has anything to toggle — see the same gating on the diamond icon
+      // in the diagram itself. A non-switchable interlink's row is informational only.
+      if(interlink.switchable){
+        tr.style.cursor = 'pointer';
+        tr.title = 'Click to view / toggle this interlink';
+        tr.addEventListener('click', ()=>showInterlinkInspector(interlink));
+      }
+      tr.innerHTML = `
+        <td>${interlink.name}</td>
+        <td>${a?a.label:'—'}</td>
+        <td>${b?b.label:'—'}</td>
+        <td><span class="tag ${interlink.breakerType==='RMU'?'tag-rmu':'tag-ab'}">${interlink.breakerType}</span></td>
+        <td>${interlink.switchState==='NC' ? 'Closed' : 'Open'}</td>
+        <td><button class="btn-danger" data-id="${interlink.id}">✕</button></td>
+      `;
+      const delBtn = tr.querySelector('button');
+      delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteInterlink(interlink.id); });
+      body.appendChild(tr);
+    }
+  }
+
+  function renderStats(){
+    document.getElementById('stat-feeders').textContent = state.feeders.length;
+    document.getElementById('stat-lines').textContent = state.lines.length;
+    const abCount = state.nodes.filter(n=>n.breakerType==='AB').length;
+    const rmuCount = state.nodes.filter(n=>n.breakerType==='RMU').length;
+    const splitCount = state.nodes.filter(n=>n.breakerType==='Split').length;
+    const tapCount = state.nodes.filter(n=>n.breakerType==='Tap').length;
+    document.getElementById('stat-ab').textContent = abCount;
+    document.getElementById('stat-rmu').textContent = rmuCount;
+    document.getElementById('stat-split').textContent = splitCount;
+    document.getElementById('stat-tap').textContent = tapCount;
+    document.getElementById('stat-tx').textContent = state.transformers.length;
+    const kva = state.transformers.reduce((a,t)=>a+(t.capacity||0),0);
+    document.getElementById('stat-kva').textContent = kva.toLocaleString();
+    // Simple sum of every R/Y/B phase amp reading entered across all transformers (whatever's
+    // been captured for the day) — not a per-phase breakdown, just one running total.
+    const totalAmps = state.transformers.reduce((sum, t) => {
+      const r = typeof t.loadR === 'number' ? t.loadR : 0;
+      const y = typeof t.loadY === 'number' ? t.loadY : 0;
+      const b = typeof t.loadB === 'number' ? t.loadB : 0;
+      return sum + r + y + b;
+    }, 0);
+    const ampsEl = document.getElementById('stat-amps');
+    ampsEl.textContent = totalAmps.toLocaleString();
+    const totalKw = (totalAmps * 250) / 1000;
+    ampsEl.title = `${totalKw.toLocaleString(undefined, { maximumFractionDigits: 2 })} kW`;
+  }
+
+  // Shows the section name (from the "Section" sheet) as a heading above the diagram — hidden
+  // entirely when there isn't one, so this stays invisible for anyone not using that sheet.
+  let sectionHeadingCollapsed = false;
+  function renderSectionHeading(){
+    const el = document.getElementById('section-heading');
+    const textEl = document.getElementById('section-heading-text');
+    const chevEl = document.getElementById('section-heading-chev');
+    const name = (state.sectionName || '').trim();
+    if(name){
+      el.style.display = 'flex';
+      el.classList.toggle('collapsed', sectionHeadingCollapsed);
+      textEl.textContent = name;
+      chevEl.textContent = sectionHeadingCollapsed ? '▸ expand' : '▾ collapse';
+      // Full Section-sheet details as a hover tooltip — only while expanded, per the ask.
+      const details = state.sectionDetails || [];
+      textEl.title = (!sectionHeadingCollapsed && details.length)
+        ? details.map(d => `${d.label}: ${d.value}`).join('\n')
+        : '';
+    } else {
+      textEl.textContent = '';
+      textEl.title = '';
+      el.style.display = 'none';
+    }
+  }
+
+  function renderAll(){
+    renderSectionHeading();
+    renderFeederList();
+    refreshLineForm();
+    refreshInterlinkForm();
+    refreshLineTxForm();
+    renderDiagram();
+    renderLegend();
+    renderTable();
+    renderInterlinkTable();
+    renderLineTxList();
+    renderStats();
+    document.getElementById('inspector').style.display = 'none';
+  }
+
+  // ---------- events ----------
+  document.getElementById('feeder-name').addEventListener('input', (e)=>{
+    if(e.target.value.trim()){
+      document.getElementById('feeder-name-error').style.display = 'none';
+      e.target.style.borderColor = '';
+    }
+  });
+
+  document.getElementById('add-feeder-btn').onclick = async ()=>{
+    const input = document.getElementById('feeder-name');
+    const errorEl = document.getElementById('feeder-name-error');
+    const name = input.value.trim();
+    if(!name){
+      errorEl.textContent = 'Feeder / source name is required.';
+      errorEl.style.display = 'block';
+      input.style.borderColor = 'var(--danger)';
+      input.focus();
+      return;
+    }
+    errorEl.style.display = 'none';
+    input.style.borderColor = '';
+    const meta = {
+      kv: document.getElementById('feeder-kv').value,
+      location: document.getElementById('feeder-location').value.trim(),
+      poc: document.getElementById('feeder-poc').value.trim(),
+      risks: document.getElementById('feeder-risks').value.trim(),
+      lastTripped: document.getElementById('feeder-last-tripped').value
+    };
+    let newFeederId;
+    if(activeView === 'realtime'){
+      // Feeders and their paired source node are two separate backend resources (unlike
+      // addFeederRaw, which creates both client-side in one step) — create the feeder first,
+      // then its source node, using the id the server assigns.
+      try{
+        const feederRow = await backend.post('/api/feeders', {
+          name, kv: meta.kv || undefined, location: meta.location || undefined,
+          poc: meta.poc || undefined, risks: meta.risks || undefined, lastTripped: meta.lastTripped || undefined,
+        });
+        const mappedFeeder = mapFeederFromServer(feederRow);
+        const sourceRow = await backend.post('/api/nodes', {
+          feederId: feederRow.id, kind: 'source', label: name + ' Source',
+        });
+        const mappedSource = mapNodeFromServer(sourceRow);
+        mappedFeeder.sourceId = mappedSource.id;
+        if(!state.feeders.some(f=>f.id===mappedFeeder.id)) state.feeders.push(mappedFeeder);
+        if(!state.nodes.some(n=>n.id===mappedSource.id)) state.nodes.push(mappedSource);
+        newFeederId = mappedFeeder.id;
+      }catch(e){
+        await handleRealtimeMutationError(e, 'That feeder');
+        return;
+      }
+    } else {
+      ({ id: newFeederId } = addFeederRaw(state, name, meta));
+      await saveState();
+    }
+    input.value = '';
+    document.getElementById('feeder-kv').value = '';
+    document.getElementById('feeder-location').value = '';
+    document.getElementById('feeder-poc').value = '';
+    document.getElementById('feeder-risks').value = '';
+    document.getElementById('feeder-last-tripped').value = '';
+    renderAll();
+    flashElement('feeder-list', newFeederId);
+  };
+
+  function flashElement(containerId, id){
+    const container = document.getElementById(containerId);
+    if(!container) return;
+    const target = [...container.children].find(c => c.dataset && c.dataset.id === id);
+    if(!target) return;
+    target.scrollIntoView({block:'nearest', behavior:'smooth'});
+    target.style.transition = 'none';
+    target.style.boxShadow = '0 0 0 2px var(--teal)';
+    target.style.background = 'rgba(63,214,192,.12)';
+    setTimeout(()=>{
+      target.style.transition = 'box-shadow 0.6s, background 0.6s';
+      target.style.boxShadow = 'none';
+      target.style.background = '';
+    }, 50);
+  }
+
+  function openDrawer(){
+    const body = document.getElementById('drawer-body');
+    const chev = document.getElementById('drawer-chev');
+    body.style.display = 'block';
+    chev.textContent = '▾ collapse';
+    positionZoomControls();
+  }
+
+  function showFormMessage(hintId, text, isError){
+    const el = document.getElementById(hintId);
+    el.textContent = text;
+    el.style.color = isError ? 'var(--danger)' : 'var(--teal)';
+    if(!isError){
+      clearTimeout(el._clearTimer);
+      el._clearTimer = setTimeout(()=>{ el.textContent = ''; el.style.color = ''; }, 3000);
+    }
+  }
+
+  document.getElementById('line-feeder').addEventListener('change', refreshLineForm);
+  document.getElementById('line-from').addEventListener('change', refreshBayRow);
+
+  document.getElementById('breaker-type').addEventListener('change', (e)=>{
+    const canHaveTx = NODE_TX_TYPES.has(e.target.value);
+    document.getElementById('tx-row').style.display = canHaveTx ? 'flex' : 'none';
+    if(!canHaveTx){
+      document.getElementById('tx-attach').checked = false;
+      document.getElementById('tx-fields').style.display = 'none';
+    }
+  });
+
+  document.getElementById('tx-attach').addEventListener('change', (e)=>{
+    document.getElementById('tx-fields').style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  document.getElementById('add-line-btn').onclick = async ()=>{
+    if(state.feeders.length===0){
+      showFormMessage('line-hint', 'Add a feeder first.', true);
+      return;
+    }
+    const feederId = document.getElementById('line-feeder').value;
+    const fromNodeId = document.getElementById('line-from').value;
+    if(!feederId || !fromNodeId){
+      showFormMessage('line-hint', 'Pick a feeder and a starting point.', true);
+      return;
+    }
+    const lineName = document.getElementById('line-name').value.trim() || ('L'+state.counters.line);
+    const nodeName = document.getElementById('node-name').value.trim() || ('N'+state.counters.node);
+    const breakerType = document.getElementById('breaker-type').value;
+    const hasTx = document.getElementById('tx-attach').checked && NODE_TX_TYPES.has(breakerType);
+    const txMeta = {
+      name: document.getElementById('tx-name').value.trim() || ('T'+state.counters.transformer),
+      capacity: document.getElementById('tx-kva').value,
+      poleName: document.getElementById('tx-pole').value.trim(),
+      loadR: document.getElementById('tx-load-r').value,
+      loadY: document.getElementById('tx-load-y').value,
+      loadB: document.getElementById('tx-load-b').value,
+      loadCapturedAt: document.getElementById('tx-load-captured').value,
+      lastFaultDate: document.getElementById('tx-fault-date').value,
+      lastFaultReason: document.getElementById('tx-fault-reason').value.trim()
+    };
+
+    const bayState = document.getElementById('bay-state').value;
+    let newLineId;
+    if(activeView === 'realtime'){
+      // Three backend resources for one client-side "add HT line" action: the new breaker node,
+      // the line connecting it to fromNodeId, and (optionally) a transformer on that new node —
+      // addLineRaw does all three as one local mutation, so here they're sequenced instead, using
+      // the server-assigned node id for the line and transformer once the node call returns.
+      try{
+        const nodeRow = await backend.post('/api/nodes', {
+          feederId, kind: 'breaker', breakerType, label: nodeName, state: 'Closed',
+        });
+        const mappedNode = mapNodeFromServer(nodeRow);
+        const lineRow = await backend.post('/api/lines', {
+          feederId, fromNodeId, toNodeId: mappedNode.id, name: lineName, breakerState: bayState,
+        });
+        const mappedLine = mapLineFromServer(lineRow);
+        if(!state.nodes.some(n=>n.id===mappedNode.id)) state.nodes.push(mappedNode);
+        if(!state.lines.some(l=>l.id===mappedLine.id)) state.lines.push(mappedLine);
+        newLineId = mappedLine.id;
+        if(hasTx){
+          const txRow = await backend.post('/api/transformers', {
+            name: txMeta.name, capacityKva: txMeta.capacity || undefined, nodeId: mappedNode.id,
+            poleName: txMeta.poleName || undefined, loadR: txMeta.loadR || undefined, loadY: txMeta.loadY || undefined,
+            loadB: txMeta.loadB || undefined, loadCapturedAt: txMeta.loadCapturedAt || undefined,
+            lastFaultDate: txMeta.lastFaultDate || undefined, lastFaultReason: txMeta.lastFaultReason || undefined,
+          });
+          const mappedTx = mapTransformerFromServer(txRow);
+          if(!state.transformers.some(t=>t.id===mappedTx.id)) state.transformers.push(mappedTx);
+        }
+      }catch(e){
+        await handleRealtimeMutationError(e, 'That line/breaker');
+        return;
+      }
+    } else {
+      ({ lineId: newLineId } = addLineRaw(state, feederId, fromNodeId, lineName, nodeName, breakerType, hasTx, txMeta, null, bayState));
+      await saveState();
+    }
+
+    document.getElementById('line-name').value='';
+    document.getElementById('node-name').value='';
+    document.getElementById('tx-name').value='';
+    document.getElementById('tx-kva').value='';
+    document.getElementById('tx-pole').value='';
+    document.getElementById('tx-load-r').value='';
+    document.getElementById('tx-load-y').value='';
+    document.getElementById('tx-load-b').value='';
+    document.getElementById('tx-load-captured').value='';
+    document.getElementById('tx-fault-date').value='';
+    document.getElementById('tx-fault-reason').value='';
+    document.getElementById('tx-attach').checked=false;
+    document.getElementById('tx-fields').style.display='none';
+
+    renderAll();
+    showFormMessage('line-hint', `Added ${lineName} → ${nodeName}.`, false);
+    openDrawer();
+    flashElement('line-table-body', newLineId);
+  };
+
+  document.getElementById('interlink-switchable').addEventListener('change', (e)=>{
+    document.getElementById('interlink-switch-fields').style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  document.getElementById('add-interlink-btn').onclick = async ()=>{
+    if(state.nodes.length < 2){
+      showFormMessage('interlink-hint', 'Add at least two breakers first.', true);
+      return;
+    }
+    const nodeAId = document.getElementById('interlink-node-a').value;
+    const nodeBId = document.getElementById('interlink-node-b').value;
+    if(!nodeAId || !nodeBId || nodeAId === nodeBId) {
+      showFormMessage('interlink-hint', 'Pick two different breakers.', true);
+      return;
+    }
+    const name = document.getElementById('interlink-name').value.trim() || ('INTERLINK'+state.counters.interlink);
+    const switchable = document.getElementById('interlink-switchable').checked;
+    const breakerType = document.getElementById('interlink-breaker-type').value;
+    const switchState = document.getElementById('interlink-state').value;
+
+    let newInterlinkId;
+    if(activeView === 'realtime'){
+      try{
+        const row = await backend.post('/api/interlinks', { name, nodeAId, nodeBId, breakerType, switchable, switchState });
+        const mapped = mapInterlinkFromServer(row);
+        if(!state.interlinks.some(t=>t.id===mapped.id)) state.interlinks.push(mapped);
+        newInterlinkId = mapped.id;
+      }catch(e){
+        await handleRealtimeMutationError(e, 'That interlink');
+        return;
+      }
+    } else {
+      ({ id: newInterlinkId } = addInterlinkRaw(state, nodeAId, nodeBId, name, breakerType, switchState, switchable));
+      await saveState();
+    }
+
+    document.getElementById('interlink-name').value = '';
+    document.getElementById('interlink-switchable').checked = false;
+    document.getElementById('interlink-switch-fields').style.display = 'none';
+    renderAll();
+    showFormMessage('interlink-hint', `Added interlink ${name}.`, false);
+    openDrawer();
+    flashElement('interlink-table-body', newInterlinkId);
+  };
+
+  document.getElementById('linetx-line').addEventListener('change', renderLineTxList);
+
+  document.getElementById('add-linetx-btn').onclick = async ()=>{
+    if(state.lines.length===0){
+      showFormMessage('linetx-hint', 'Add an HT line first.', true);
+      return;
+    }
+    const lineId = document.getElementById('linetx-line').value;
+    if(!lineId){
+      showFormMessage('linetx-hint', 'Pick a line to tap the transformer onto.', true);
+      return;
+    }
+    const name = document.getElementById('linetx-name').value.trim() || ('T'+state.counters.transformer);
+    const capacity = document.getElementById('linetx-kva').value;
+    const poleName = document.getElementById('linetx-pole').value.trim();
+    const loadR = document.getElementById('linetx-load-r').value;
+    const loadY = document.getElementById('linetx-load-y').value;
+    const loadB = document.getElementById('linetx-load-b').value;
+    const loadCapturedAt = document.getElementById('linetx-load-captured').value;
+    const lastFaultDate = document.getElementById('linetx-fault-date').value;
+    const lastFaultReason = document.getElementById('linetx-fault-reason').value.trim();
+
+    let newTxId;
+    if(activeView === 'realtime'){
+      try{
+        const row = await backend.post('/api/transformers', {
+          name, capacityKva: capacity || undefined, lineId, poleName: poleName || undefined,
+          loadR: loadR || undefined, loadY: loadY || undefined, loadB: loadB || undefined,
+          loadCapturedAt: loadCapturedAt || undefined, lastFaultDate: lastFaultDate || undefined,
+          lastFaultReason: lastFaultReason || undefined,
+        });
+        const mapped = mapTransformerFromServer(row);
+        if(!state.transformers.some(t=>t.id===mapped.id)) state.transformers.push(mapped);
+        newTxId = mapped.id;
+      }catch(e){
+        await handleRealtimeMutationError(e, 'That transformer');
+        return;
+      }
+    } else {
+      ({ id: newTxId } = addTransformerRaw(state, {name, capacity, poleName, loadR, loadY, loadB, loadCapturedAt, lastFaultDate, lastFaultReason, lineId}));
+      await saveState();
+    }
+
+    document.getElementById('linetx-name').value = '';
+    document.getElementById('linetx-kva').value = '';
+    document.getElementById('linetx-pole').value = '';
+    document.getElementById('linetx-load-r').value = '';
+    document.getElementById('linetx-load-y').value = '';
+    document.getElementById('linetx-load-b').value = '';
+    document.getElementById('linetx-load-captured').value = '';
+    document.getElementById('linetx-fault-date').value = '';
+    document.getElementById('linetx-fault-reason').value = '';
+    renderAll();
+    showFormMessage('linetx-hint', `Added transformer ${name}.`, false);
+    flashElement('linetx-list', newTxId);
+  };
+
+  document.getElementById('drawer-header').onclick = ()=>{
+    const body = document.getElementById('drawer-body');
+    const chev = document.getElementById('drawer-chev');
+    const open = body.style.display === 'block';
+    body.style.display = open ? 'none' : 'block';
+    chev.textContent = open ? '▸ expand' : '▾ collapse';
+    positionZoomControls();
+  };
+
+  document.getElementById('section-heading').addEventListener('click', ()=>{
+    sectionHeadingCollapsed = !sectionHeadingCollapsed;
+    renderSectionHeading();
+    // The heading's height just changed, which shifts #canvas-wrap's top edge — reposition
+    // anything anchored to it (same reasoning as the sidebar/drawer toggles above).
+    positionZoomControls();
+    const inspector = document.getElementById('inspector');
+    if(inspector.style.display === 'block') positionInspector(inspector);
+  });
+
+  document.getElementById('tab-realtime').addEventListener('click', ()=>switchView('realtime'));
+  document.getElementById('tab-simulator').addEventListener('click', ()=>switchView('simulator'));
+
+  // ---------- mobile: sidebar drawer ----------
+  const sidebarEl = document.getElementById('sidebar');
+  const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+  function openSidebar(){ sidebarEl.classList.add('open'); sidebarBackdrop.classList.add('open'); }
+  function closeSidebar(){ sidebarEl.classList.remove('open'); sidebarBackdrop.classList.remove('open'); }
+  document.getElementById('mobile-menu-btn').addEventListener('click', ()=>{
+    sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar();
+  });
+  sidebarBackdrop.addEventListener('click', closeSidebar);
+
+  // ---------- mobile: diagram zoom ----------
+  const ZOOM_MIN = 0.4, ZOOM_MAX = 2.5, ZOOM_STEP = 0.2;
+  function applyZoom(delta){
+    // Manual zoom always implies "world view" — exit fit-to-screen first so the zoom actually
+    // takes visible effect instead of being overridden by the fit sizing.
+    if(fitToScreen) setFitToScreen(false, { skipRender: true });
+    zoomLevel = delta === 0 ? 1 : Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +(zoomLevel + delta).toFixed(2)));
+    renderDiagram();
+  }
+  document.getElementById('zoom-in').addEventListener('click', ()=>applyZoom(ZOOM_STEP));
+  document.getElementById('zoom-out').addEventListener('click', ()=>applyZoom(-ZOOM_STEP));
+  document.getElementById('zoom-reset').addEventListener('click', ()=>applyZoom(0));
+
+  // Fit-to-screen toggle: switches between showing the entire network shrunk/grown to fit inside
+  // the visible canvas (no scrolling needed) and "world view" — the normal zoom/pan behavior at
+  // whatever zoom level was last set. See the fitToScreen branch in renderDiagram for the actual
+  // sizing logic.
+  const fitToggleBtn = document.getElementById('fit-toggle');
+  function setFitToScreen(on, opts){
+    fitToScreen = on;
+    fitToggleBtn.classList.toggle('active', on);
+    fitToggleBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    fitToggleBtn.title = on
+      ? 'Showing the whole network — click for world view (zoom & pan)'
+      : 'Fit whole network to screen';
+    if(!(opts && opts.skipRender)) renderDiagram();
+  }
+  fitToggleBtn.addEventListener('click', ()=> setFitToScreen(!fitToScreen));
+
+  // Zoom controls are position:fixed (viewport-relative) so they don't scroll away with a big
+  // network. This pins them to the visible bottom-right corner of #canvas-wrap specifically —
+  // recomputed whenever that corner could move (window resize, drawer expand/collapse).
+  function positionZoomControls(){
+    const zc = document.getElementById('zoom-controls');
+    const wrap = document.getElementById('canvas-wrap');
+    const rect = wrap.getBoundingClientRect();
+    zc.style.right = Math.max(8, window.innerWidth - rect.right + 14) + 'px';
+    zc.style.bottom = Math.max(8, window.innerHeight - rect.bottom + 14) + 'px';
+  }
+  window.addEventListener('resize', positionZoomControls);
+  positionZoomControls();
+
+  // ---------- top bar entity search ----------
+  // Type-ahead search across every named entity in the current view (feeders, every breaker type,
+  // lines, interlinks, transformers). Picking a result pans the canvas to that entity's position and
+  // opens the same details panel/modal a direct click on it would show.
+  const ENTITY_BADGE_STYLE = {
+    Feeder:      { bg:'rgba(63,214,192,.16)',  color:'var(--teal)' },
+    Source:      { bg:'rgba(63,214,192,.16)',  color:'var(--teal)' },
+    AB:          { bg:'rgba(92,147,255,.16)',  color:'var(--blue)' },
+    RMU:         { bg:'rgba(240,180,41,.16)',  color:'var(--amber)' },
+    Split:       { bg:'rgba(34,211,238,.16)',  color:'var(--split)' },
+    Tap:         { bg:'rgba(251,146,60,.16)',  color:'var(--tap)' },
+    Line:        { bg:'rgba(148,163,184,.16)', color:'var(--muted)' },
+    Interlink:         { bg:'rgba(148,163,184,.16)', color:'var(--interlink)' },
+    Transformer: { bg:'rgba(167,139,250,.16)', color:'var(--violet)' }
+  };
+
+  function collectSearchEntities(){
+    const items = [];
+    for(const f of state.feeders){
+      items.push({ type:'Feeder', id:f.id, label:f.name, sub: f.kv ? `${f.kv}kV` : '' });
+    }
+    for(const n of state.nodes){
+      const type = n.kind === 'source' ? 'Source' : n.breakerType;
+      items.push({ type, id:n.id, label:n.label, sub:'' });
+    }
+    for(const l of state.lines){
+      const from = nodeById(l.fromNodeId), to = nodeById(l.toNodeId);
+      items.push({ type:'Line', id:l.id, label:l.name, sub: (from && to) ? `${from.label} → ${to.label}` : '' });
+    }
+    for(const t of state.interlinks){
+      items.push({ type:'Interlink', id:t.id, label:t.name, sub:'' });
+    }
+    for(const tx of state.transformers){
+      items.push({ type:'Transformer', id:tx.id, label:tx.name, sub: tx.capacity ? `${tx.capacity}kVA` : '' });
+    }
+    return items;
+  }
+
+  function searchEntities(query){
+    const q = query.trim().toLowerCase();
+    if(q.length < 2) return [];
+    return collectSearchEntities()
+      .filter(item => item.label && item.label.toLowerCase().includes(q))
+      .slice(0, 25);
+  }
+
+  const searchInput = document.getElementById('entity-search-input');
+  const searchResultsBox = document.getElementById('entity-search-results');
+
+  function renderSearchResults(items){
+    if(!items.length){
+      searchResultsBox.innerHTML = `<div class="empty">No matches</div>`;
+      searchResultsBox.classList.add('open');
+      return;
+    }
+    searchResultsBox.innerHTML = items.map(item=>{
+      const style = ENTITY_BADGE_STYLE[item.type] || { bg:'rgba(148,163,184,.16)', color:'var(--muted)' };
+      return `<div class="result-item" data-type="${item.type}" data-id="${item.id}">
+        <span class="result-badge" style="background:${style.bg};color:${style.color};">${item.type}</span>
+        <span class="result-label">${escapeAttr(item.label)}</span>
+        ${item.sub ? `<span class="result-sub">${escapeAttr(item.sub)}</span>` : ''}
+      </div>`;
+    }).join('');
+    searchResultsBox.classList.add('open');
+    searchResultsBox.querySelectorAll('.result-item').forEach(rowEl=>{
+      rowEl.addEventListener('click', ()=>{
+        selectSearchResult(rowEl.dataset.type, rowEl.dataset.id);
+      });
+    });
+  }
+
+  searchInput.addEventListener('input', ()=>{
+    const q = searchInput.value.trim();
+    if(q.length < 2){
+      searchResultsBox.classList.remove('open');
+      searchResultsBox.innerHTML = '';
+      return;
+    }
+    renderSearchResults(searchEntities(q));
+  });
+  searchInput.addEventListener('focus', ()=>{
+    if(searchInput.value.trim().length >= 2) renderSearchResults(searchEntities(searchInput.value));
+  });
+  searchInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape'){
+      searchResultsBox.classList.remove('open');
+      searchInput.blur();
+    } else if(e.key === 'Enter'){
+      // Jump straight to the top match without requiring a click, for quick keyboard-only use.
+      const first = searchResultsBox.querySelector('.result-item');
+      if(first) selectSearchResult(first.dataset.type, first.dataset.id);
+    }
+  });
+  document.addEventListener('click', (e)=>{
+    if(!document.getElementById('entity-search-wrap').contains(e.target)){
+      searchResultsBox.classList.remove('open');
+    }
+  });
+
+  // Resolves an entity to a point in diagram-space (viewBox units, matching computeLayout's
+  // "positions" map) to pan the canvas to.
+  function entityTargetPosition(type, id, positions){
+    if(type === 'Feeder'){
+      const f = feederById(id);
+      return (f && positions[f.sourceId]) || null;
+    }
+    if(type === 'Line'){
+      const line = state.lines.find(l=>l.id===id);
+      if(!line) return null;
+      const p1 = positions[line.fromNodeId], p2 = positions[line.toNodeId];
+      if(!p1 || !p2) return null;
+      return { x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 };
+    }
+    if(type === 'Interlink'){
+      const interlink = state.interlinks.find(t=>t.id===id);
+      if(!interlink) return null;
+      const p1 = positions[interlink.nodeAId], p2 = positions[interlink.nodeBId];
+      if(!p1 || !p2) return null;
+      return { x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 };
+    }
+    if(type === 'Transformer'){
+      const tx = state.transformers.find(t=>t.id===id);
+      if(!tx) return null;
+      if(tx.nodeId) return positions[tx.nodeId] || null;
+      if(tx.lineId){
+        const line = state.lines.find(l=>l.id===tx.lineId);
+        if(!line) return null;
+        const p1 = positions[line.fromNodeId], p2 = positions[line.toNodeId];
+        if(!p1 || !p2) return null;
+        return { x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 };
+      }
+      return null;
+    }
+    // AB / RMU / Split / Tap / Source — the id is itself a node id
+    return positions[id] || null;
+  }
+
+  // Briefly pulses an expanding ring at a diagram-space point so it's obvious what the search
+  // just panned to, even before the opened inspector/modal draws the eye.
+  function flashCanvasPoint(x, y){
+    const ring = el('circle', {cx:x, cy:y, r:20, fill:'none', stroke:'var(--teal)', 'stroke-width':3, opacity:0.9}, svg);
+    ring.style.transition = 'r 1s ease-out, opacity 1s ease-out';
+    requestAnimationFrame(()=>{
+      ring.setAttribute('r', 46);
+      ring.style.opacity = '0';
+    });
+    setTimeout(()=>{ ring.remove(); }, 1100);
+  }
+
+  function selectSearchResult(type, id){
+    searchResultsBox.classList.remove('open');
+    searchInput.value = '';
+
+    // Panning only makes sense in world view — exit fit-to-screen first if it's currently active.
+    if(fitToScreen) setFitToScreen(false, { skipRender:true });
+    renderDiagram();
+
+    const { positions } = computeLayout();
+    const target = entityTargetPosition(type, id, positions);
+    if(!target) return;
+
+    const wrap = document.getElementById('canvas-wrap');
+    wrap.scrollTo({
+      left: Math.max(0, target.x * zoomLevel - wrap.clientWidth / 2),
+      top: Math.max(0, target.y * zoomLevel - wrap.clientHeight / 2),
+      behavior: 'smooth'
+    });
+    flashCanvasPoint(target.x, target.y);
+
+    // Open whatever details panel that entity type normally shows on a direct click, so "pan to
+    // see more details" lands the user right on the relevant information.
+    if(type === 'Feeder'){
+      openFeederModal(id);
+    } else if(type === 'Interlink'){
+      // Only pop up the toggle panel for a switchable interlink — a normal (non-switchable) one has
+      // nothing to operate, so the pan + highlight alone is the "more detail" for it.
+      const interlink = state.interlinks.find(t=>t.id===id);
+      if(interlink && interlink.switchable) showInterlinkInspector(interlink);
+    } else if(type === 'Transformer'){
+      openTransformerModal(id);
+    } else if(type === 'Line'){
+      const line = state.lines.find(l=>l.id===id);
+      const toNode = line ? nodeById(line.toNodeId) : null;
+      if(toNode) showInspector(toNode);
+    } else {
+      // AB / RMU / Split / Tap / Source
+      const node = nodeById(id);
+      if(node) showInspector(node);
+    }
+  }
+
+  // Full-screen toggle: hides the left "add entities" sidebar so the diagram takes the
+  // full width. Desktop only (the mobile hamburger menu already gives the same effect
+  // there by default). Zoom controls and an open inspector both anchor to #canvas-wrap's
+  // bounding rect, which changes the instant the sidebar is hidden/shown, so recompute both.
+  const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+  function setSidebarCollapsed(collapsed){
+    document.getElementById('app').classList.toggle('sidebar-collapsed', collapsed);
+    toggleSidebarBtn.textContent = collapsed ? '⛶ Exit Full Screen' : '⛶ Full Screen';
+    toggleSidebarBtn.title = collapsed ? 'Show the left panel again' : 'Hide the left panel for a full-screen diagram';
+    positionZoomControls();
+    const inspector = document.getElementById('inspector');
+    if(inspector.style.display === 'block') positionInspector(inspector);
+  }
+  toggleSidebarBtn.addEventListener('click', ()=>{
+    setSidebarCollapsed(!document.getElementById('app').classList.contains('sidebar-collapsed'));
+  });
+
+  document.getElementById('theme-toggle-btn').addEventListener('click', ()=>{
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    const next = current === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    setStoredTheme(next);
+  });
+
+  document.getElementById('backend-logout-btn').addEventListener('click', async ()=>{
+    if(!confirm('Sign out of the GRIDLINE backend? You will need to sign in again to use the Realtime view.')) return;
+    backend.clearToken();
+    if(backend.socket){ backend.socket.disconnect(); backend.socket = null; }
+    backend.connected = false;
+    delete statesByView.realtime;
+    if(activeView === 'realtime') await switchView('realtime'); // re-shows the login gate immediately
+  });
+
+  function showImportStatus(text, isError){
+    const el = document.getElementById('import-status');
+    el.textContent = text;
+    el.style.color = isError ? 'var(--danger)' : 'var(--teal)';
+    clearTimeout(el._t);
+    el._t = setTimeout(()=>{ el.textContent=''; }, 4000);
+  }
+
+  function buildLineRowsFromState(s){
+    const rows = [];
+    for(const line of s.lines){
+      const from = s.nodes.find(n=>n.id===line.fromNodeId);
+      const to = s.nodes.find(n=>n.id===line.toNodeId);
+      const feeder = s.feeders.find(f=>f.id===line.feederId);
+      const nodeTx = to ? s.transformers.find(t=>t.nodeId===to.id) : null;
+      const lineTx = s.transformers.find(t=>t.lineId===line.id);
+      rows.push({
+        'Feeder': feeder ? feeder.name : '',
+        'LineStart': from ? from.label : '',
+        'LineEnd': to ? to.label : '',
+        'AB Type': to ? to.breakerType : 'AB',
+        'AB State': to ? (to.state || 'Closed') : 'Closed',
+        'Transformer Connected': lineTx ? lineTx.name : '',
+        'RMU Connected Transformer': nodeTx ? nodeTx.name : ''
+      });
+    }
+    for(const interlink of s.interlinks){
+      const a = s.nodes.find(n=>n.id===interlink.nodeAId);
+      const b = s.nodes.find(n=>n.id===interlink.nodeBId);
+      const feeder = a ? s.feeders.find(f=>f.id===a.feederId) : null;
+      rows.push({
+        'Feeder': feeder ? feeder.name : '',
+        'LineStart': a ? a.label : '',
+        'LineEnd': b ? b.label : '',
+        'AB Type': interlink.breakerType,
+        'AB State': interlink.switchState === 'NC' ? 'Closed' : 'Open',
+        'Transformer Connected': '',
+        'RMU Connected Transformer': ''
+      });
+    }
+    return rows;
+  }
+
+  function buildFeederRowsFromState(s){
+    return s.feeders.map(f => ({
+      'Feeder': f.name,
+      'Voltage (kV)': f.kv || '',
+      'Location': f.location || '',
+      'Contact': f.poc || '',
+      'Known Risks': f.risks || '',
+      'Last Tripped': f.lastTripped || '',
+      'Status': f.state === 'Off' ? 'Off' : 'On'
+    }));
+  }
+
+  function buildTransformerRowsFromState(s){
+    return s.transformers.map(tx => {
+      const node = tx.nodeId ? s.nodes.find(n=>n.id===tx.nodeId) : null;
+      const line = tx.lineId ? s.lines.find(l=>l.id===tx.lineId) : null;
+      return {
+        'Transformer Name': tx.name,
+        'Attached Line': line ? line.name : '',
+        'Attached Breaker': node ? node.label : '',
+        'Capacity (kVA)': tx.capacity || '',
+        'Pole Name': tx.poleName || '',
+        'R Phase (A)': tx.loadR !== undefined ? tx.loadR : '',
+        'Y Phase (A)': tx.loadY !== undefined ? tx.loadY : '',
+        'B Phase (A)': tx.loadB !== undefined ? tx.loadB : '',
+        'Load Captured At': tx.loadCapturedAt || '',
+        'Last Fault Date': tx.lastFaultDate || '',
+        'Last Fault Reason': tx.lastFaultReason || ''
+      };
+    });
+  }
+
+  function buildInterlinkRowsFromState(s){
+    return s.interlinks.map(interlink => {
+      const a = s.nodes.find(n=>n.id===interlink.nodeAId);
+      const b = s.nodes.find(n=>n.id===interlink.nodeBId);
+      return {
+        'Interlink Name': interlink.name,
+        'Node A': a ? a.label : '',
+        'Node B': b ? b.label : '',
+        'Switch Type': interlink.breakerType,
+        'Switchable': interlink.switchable ? 'Yes' : 'No',
+        'State': interlink.switchState === 'NC' ? 'Closed' : 'Open'
+      };
+    });
+  }
+
+  // One row per outgoing bay (line) of every RMU node, so per-branch switch states round-trip
+  // through Export/Import Excel intact.
+  function buildRmuBayRowsFromState(s){
+    const rows = [];
+    for(const node of s.nodes){
+      if(node.breakerType !== 'RMU') continue;
+      for(const line of s.lines.filter(l=>l.fromNodeId===node.id)){
+        const to = s.nodes.find(n=>n.id===line.toNodeId);
+        rows.push({
+          'RMU Name': node.label,
+          'Bay Line': line.name,
+          'Bay To': to ? to.label : '',
+          'Bay State': line.breakerState === 'Open' ? 'Open' : 'Closed'
+        });
+      }
+    }
+    return rows;
+  }
+
+  const SHEET_HEADERS = {
+    lines: ['Feeder','LineStart','LineEnd','AB Type','AB State','Transformer Connected','RMU Connected Transformer'],
+    feeders: ['Feeder','Voltage (kV)','Location','Contact','Known Risks','Last Tripped','Status'],
+    transformers: ['Transformer Name','Attached Line','Attached Breaker','Capacity (kVA)','Pole Name','R Phase (A)','Y Phase (A)','B Phase (A)','Load Captured At','Last Fault Date','Last Fault Reason'],
+    interlinks: ['Interlink Name','Node A','Node B','Switch Type','Switchable','State'],
+    rmu: ['RMU Name','Bay Line','Bay To','Bay State']
+  };
+
+  function findSheet(wb, ...names){
+    for(const wanted of names){
+      const match = wb.SheetNames.find(n => n.trim().toLowerCase() === wanted.toLowerCase());
+      if(match) return wb.Sheets[match];
+    }
+    return null;
+  }
+
+  document.getElementById('import-excel-btn').addEventListener('click', ()=>{
+    document.getElementById('import-excel-input').click();
+  });
+
+  document.getElementById('import-excel-input').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if(!file) return;
+    if(activeView === 'realtime'){
+      // The Realtime view's data now lives in the shared backend, not this browser's localStorage
+      // — importing a file here can't just replace local `state` the way it does for Simulator,
+      // since every other connected user (mobile and web) needs to see the same result. Bulk-seeding
+      // the server from an Excel file (creating each feeder/node/line/interlink/transformer via the
+      // API in dependency order) is real, separate scope from this integration — not yet built. For
+      // now, import into Simulator to review a file, or add entities to Realtime one at a time.
+      showImportStatus('Import isn\'t wired to the live backend yet — switch to Simulator to import a file, or add entities to Realtime one at a time.', true);
+      return;
+    }
+    try{
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type:'array' });
+      // "Lines" sheet is required; accept "Sheet1" too for backward compatibility with the original
+      // single-sheet KSE template format. Feeders/Transformers/Interlinks are optional enrichment sheets.
+      const linesSheet = findSheet(wb, 'Lines', 'Sheet1');
+      if(!linesSheet){
+        showImportStatus('No "Lines" (or "Sheet1") tab found in that file.', true);
+        return;
+      }
+      const lineRows = XLSX.utils.sheet_to_json(linesSheet, { defval:'' });
+      if(!lineRows.length){
+        showImportStatus('The Lines sheet has no data rows.', true);
+        return;
+      }
+      const feedersSheet = findSheet(wb, 'Feeders');
+      const transformersSheet = findSheet(wb, 'Transformers');
+      const interlinksSheet = findSheet(wb, 'Interlinks', 'Ties'); // 'Ties' = legacy sheet name, still accepted on import
+      const rmuSheet = findSheet(wb, 'RMU');
+      const sectionSheet = findSheet(wb, 'Section');
+      const newState = buildStateFromWorkbookData({
+        lineRows,
+        feederRows: feedersSheet ? XLSX.utils.sheet_to_json(feedersSheet, { defval:'' }) : null,
+        transformerRows: transformersSheet ? XLSX.utils.sheet_to_json(transformersSheet, { defval:'' }) : null,
+        interlinkRows: interlinksSheet ? XLSX.utils.sheet_to_json(interlinksSheet, { defval:'' }) : null,
+        rmuBayRows: rmuSheet ? XLSX.utils.sheet_to_json(rmuSheet, { defval:'' }) : null,
+        sectionName: parseSectionSheet(sectionSheet),
+        sectionDetails: parseSectionDetails(sectionSheet)
+      });
+      if(newState.lines.length === 0 && newState.interlinks.length === 0){
+        showImportStatus('Could not find Feeder/LineStart/LineEnd columns in that file.', true);
+        return;
+      }
+      // Keep the Section sheet exactly as imported (not just the label/value pairs we parsed out
+      // of it) and carry along any other sheet the workbook has that this app doesn't otherwise
+      // model, so Save/Export never silently drops static data the user put there themselves.
+      newState.rawSectionSheet = sectionSheet || null;
+      const KNOWN_SHEET_NAMES = new Set(['lines','sheet1','feeders','transformers','interlinks','ties','rmu','section']);
+      newState.extraSheets = {};
+      for(const name of wb.SheetNames){
+        if(!KNOWN_SHEET_NAMES.has(name.trim().toLowerCase())){
+          newState.extraSheets[name] = wb.Sheets[name];
+        }
+      }
+      statesByView[activeView] = newState;
+      state = newState;
+      await saveStateFor(activeView, state);
+      renderAll();
+      const viewLabel = activeView === 'realtime' ? 'Real Time View' : 'Simulator';
+      showImportStatus(`Imported "${file.name}" into ${viewLabel}.`, false);
+    }catch(err){
+      console.error(err);
+      showImportStatus('Could not read that file — check it matches the template format.', true);
+    }
+  });
+
+  function buildWorkbookFromState(s){
+    const wb = XLSX.utils.book_new();
+    const lineWs = XLSX.utils.json_to_sheet(buildLineRowsFromState(s), { header: SHEET_HEADERS.lines });
+    const feederWs = XLSX.utils.json_to_sheet(buildFeederRowsFromState(s), { header: SHEET_HEADERS.feeders });
+    const txWs = XLSX.utils.json_to_sheet(buildTransformerRowsFromState(s), { header: SHEET_HEADERS.transformers });
+    const interlinkWs = XLSX.utils.json_to_sheet(buildInterlinkRowsFromState(s), { header: SHEET_HEADERS.interlinks });
+    const rmuWs = XLSX.utils.json_to_sheet(buildRmuBayRowsFromState(s), { header: SHEET_HEADERS.rmu });
+    // Section sheet: if we still have the exact sheet object from the last import, write that
+    // back untouched (preserves any extra columns, notes, or formatting the parser doesn't
+    // model). Only fall back to reconstructing a plain label/value sheet when there's no
+    // original to preserve (e.g. a brand-new network with no imported Section sheet yet).
+    const sectionWs = s.rawSectionSheet
+      ? s.rawSectionSheet
+      : XLSX.utils.aoa_to_sheet(
+          (s.sectionDetails && s.sectionDetails.length)
+            ? s.sectionDetails.map(d => [d.label, d.value])
+            : [['Section', s.sectionName || '']]
+        );
+    XLSX.utils.book_append_sheet(wb, lineWs, 'Lines');
+    XLSX.utils.book_append_sheet(wb, feederWs, 'Feeders');
+    XLSX.utils.book_append_sheet(wb, txWs, 'Transformers');
+    XLSX.utils.book_append_sheet(wb, interlinkWs, 'Interlinks');
+    XLSX.utils.book_append_sheet(wb, rmuWs, 'RMU');
+    XLSX.utils.book_append_sheet(wb, sectionWs, 'Section');
+    // Carry forward any other custom sheets from the original workbook that this app doesn't
+    // model at all, so Save/Export never silently drops the user's own static data.
+    for(const [name, sheet] of Object.entries(s.extraSheets || {})){
+      XLSX.utils.book_append_sheet(wb, sheet, name);
+    }
+    return wb;
+  }
+
+  document.getElementById('export-excel-btn').addEventListener('click', ()=>{
+    const wb = buildWorkbookFromState(state);
+    const filename = (activeView === 'realtime' ? 'RealtimeView' : 'SimulatorView') + '-export.xlsx';
+    XLSX.writeFile(wb, filename);
+    showImportStatus(`Exported ${filename} (${wb.SheetNames.length} sheets).`, false);
+  });
+
+  // Save: writes the current view's state to its working Excel file at any time.
+  // On browsers that support the File System Access API (Chrome/Edge), the first
+  // Save prompts for a file location and every Save after that writes straight
+  // back to the same file with no dialog. Everywhere else it falls back to a
+  // plain download using the view's canonical filename.
+  const savedFileHandles = { realtime: null, simulator: null };
+
+  async function saveCurrentViewToExcel(){
+    const viewFilename = (activeView === 'realtime' ? 'RealtimeView' : 'SimulatorView') + '.xlsx';
+    const wb = buildWorkbookFromState(state);
+
+    if(window.showSaveFilePicker){
+      try{
+        let handle = savedFileHandles[activeView];
+        if(!handle){
+          handle = await window.showSaveFilePicker({
+            suggestedName: viewFilename,
+            types: [{
+              description: 'Excel Workbook',
+              accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+            }]
+          });
+          savedFileHandles[activeView] = handle;
+        }
+        const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+        const writable = await handle.createWritable();
+        await writable.write(buf);
+        await writable.close();
+        showImportStatus(`Saved to ${handle.name}.`, false);
+      }catch(err){
+        if(err && err.name === 'AbortError') return; // user cancelled the save dialog
+        console.error(err);
+        savedFileHandles[activeView] = null;
+        XLSX.writeFile(wb, viewFilename);
+        showImportStatus(`Saved as download: ${viewFilename}.`, false);
+      }
+    } else {
+      XLSX.writeFile(wb, viewFilename);
+      showImportStatus(`Downloaded ${viewFilename}.`, false);
+    }
+  }
+
+  document.getElementById('save-excel-btn').addEventListener('click', saveCurrentViewToExcel);
+
+  // Print / Save-as-PDF: the actual layout work happens in the @media print stylesheet (see the
+  // <style> block), which hides everything but the section heading, legend, and diagram and lets
+  // the SVG flow across as many pages as needed. Here we just give the browser's print dialog a
+  // sensible document title, since that's what most browsers suggest as the PDF's filename.
+  const originalDocumentTitle = document.title;
+  document.getElementById('print-btn').addEventListener('click', ()=>{
+    const viewLabel = activeView === 'realtime' ? 'Realtime' : 'Simulator';
+    const section = (state.sectionName || '').trim();
+    document.title = ['GRIDLINE', section, viewLabel].filter(Boolean).join(' - ');
+    window.print();
+  });
+  window.addEventListener('afterprint', ()=>{ document.title = originalDocumentTitle; });
+
+  // ---------- init ----------
+  (async function init(){
+    await switchView('realtime');
+  })();
+})();
+</script>
+</body>
+</html>
