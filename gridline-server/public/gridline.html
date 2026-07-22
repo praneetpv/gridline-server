@@ -2904,16 +2904,27 @@
     // header, whether anything needs attention — without opening each transformer individually. This
     // refreshes on every renderAll(), which fires on every local edit AND on every realtime broadcast
     // from other users, so it stays live for anyone watching the same Realtime view.
+    //
+    // Deliberately a rolling 3-calendar-day window (today + the previous 2 days) rather than every
+    // fault ever logged — this is a live "does anything need attention right now" gauge, not a
+    // historical fault log, so anything older just drops off on its own with no manual cleanup.
+    // A transformer with no parseable fault date can't be placed in that window, so it's excluded.
+    const faultWindowStart = new Date();
+    faultWindowStart.setDate(faultWindowStart.getDate() - 2);
+    faultWindowStart.setHours(0, 0, 0, 0);
     const faulted = state.transformers
-      .filter(t => (t.lastFaultDate || '').trim() || (t.lastFaultReason || '').trim())
+      .filter(t => {
+        const d = t.lastFaultDate ? new Date(t.lastFaultDate) : null;
+        return d && !isNaN(d.getTime()) && d.getTime() >= faultWindowStart.getTime();
+      })
       .sort((a, b) => String(b.lastFaultDate || '').localeCompare(String(a.lastFaultDate || '')));
     const faultsWrap = document.getElementById('stat-faults-wrap');
     const faultsEl = document.getElementById('stat-faults');
     faultsEl.textContent = faulted.length;
     faultsWrap.classList.toggle('has-faults', faulted.length > 0);
     faultsWrap.title = faulted.length
-      ? faulted.map(t => `${t.name}: ${t.lastFaultDate ? new Date(t.lastFaultDate).toLocaleString() : 'date not recorded'} — ${t.lastFaultReason || 'reason not recorded'}`).join('\n')
-      : 'No faults logged on any transformer';
+      ? faulted.map(t => `${t.name}: ${new Date(t.lastFaultDate).toLocaleString()} — ${t.lastFaultReason || 'reason not recorded'}`).join('\n')
+      : 'No faults logged in the last 3 days';
   }
 
   // Shows the section name (from the "Section" sheet) as a heading above the diagram — hidden
