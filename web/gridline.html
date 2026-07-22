@@ -1524,6 +1524,13 @@
         if(interlink.switchState !== 'NC') continue;
         const a = nodeById(interlink.nodeAId), b = nodeById(interlink.nodeBId);
         if(!a || !b) continue;
+        // The AB/RMU switch at either end of a ring interlink sits physically in series with the
+        // tie itself (that's the whole point of an "open point" AB) — opening it doesn't just cut
+        // that junction off from its own incoming line, it severs the tie connection entirely. So a
+        // switch that's genuinely Open at either end blocks backfeed through this interlink outright,
+        // regardless of the interlink's own switchState. (Split/Tap endpoints have no real switch —
+        // their state is always 'Closed' — so this only ever gates a true AB/RMU open point.)
+        if(a.state === 'Open' || b.state === 'Open') continue;
         add(fromVertexKey(a), fromVertexKey(b));
       }
     }
