@@ -21,7 +21,7 @@
     --split:#22D3EE;
     --tap:#FB923C;
     --live:#3DD68C;
-    --isolated:#5AA9E6;
+    --isolated:#F0B429;
     --backfeed:#E5484D;
     --feeder-off:#4B5560;
     --disabled:#5B6670;
@@ -50,7 +50,7 @@
     --split:#0B7285;
     --tap:#B65C0E;
     --live:#1E9E63;
-    --isolated:#1B5FA8;
+    --isolated:#A8710A;
     --backfeed:#C6273A;
     --feeder-off:#5B6670;
     --disabled:#8993A0;
@@ -374,7 +374,7 @@
     :root, html[data-theme="light"]{
       --bg:#FFFFFF; --panel:#FFFFFF; --panel-2:#F4F5F7; --border:#C7CCD2; --text:#14181C; --muted:#4B5560;
       --teal:#0E8E7A; --blue:#2F5FD1; --amber:#A8710A; --violet:#6236C9; --danger:#C22A45;
-      --interlink:#5B6B7D; --split:#0B7285; --tap:#B65C0E; --live:#1E9E63; --isolated:#1B5FA8; --backfeed:#C6273A;
+      --interlink:#5B6B7D; --split:#0B7285; --tap:#B65C0E; --live:#1E9E63; --isolated:#A8710A; --backfeed:#C6273A;
       --feeder-off:#5B6670; --disabled:#8993A0; --panel-translucent:#FFFFFF; --grid-dot:#FFFFFF;
     }
     #mobile-menu-btn, #view-tabs, #sidebar, #sidebar-backdrop, #zoom-controls, #inspector,
@@ -1624,9 +1624,48 @@
     saveState(); renderAll();
   }
 
+  // Mobile field engineers are physically standing at the pole operating the AB switch by hand —
+  // a quick on-site safety checklist before the app records the switch as flipped. Desktop/control-
+  // room use (dispatchers watching a screen, nowhere near live equipment) doesn't need this gate.
+  function showSafetyFirstGate(){
+    return new Promise((resolve)=>{
+      const backdrop = document.getElementById('feeder-modal-backdrop');
+      const modal = document.getElementById('feeder-modal');
+      modal.innerHTML = `
+        <h2>⚠ Safety First</h2>
+        <ul style="margin:12px 0 0;padding-left:20px;color:var(--text);font-size:13px;line-height:1.8;">
+          <li>Ensure Feeder is OFF</li>
+          <li>Proper grounding and earthing</li>
+          <li>Wear protective gears</li>
+          <li>Ensure good weather conditions</li>
+        </ul>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="safety-gate-cancel">Cancel</button>
+          <button class="btn-primary" style="margin-top:0;" id="safety-gate-proceed">Proceed</button>
+        </div>
+      `;
+      backdrop.style.display = 'flex';
+      let settled = false;
+      const finish = (result)=>{
+        if(settled) return;
+        settled = true;
+        backdrop.style.display = 'none';
+        backdrop.onclick = null;
+        resolve(result);
+      };
+      document.getElementById('safety-gate-cancel').onclick = ()=>finish(false);
+      document.getElementById('safety-gate-proceed').onclick = ()=>finish(true);
+      backdrop.onclick = (e)=>{ if(e.target === backdrop) finish(false); };
+    });
+  }
+
   async function toggleNodeState(nodeId){
     const node = nodeById(nodeId);
     if(!node || node.kind !== 'breaker' || !SWITCHABLE_TYPES.has(node.breakerType)) return;
+    if(node.breakerType === 'AB' && isMobileClient()){
+      const proceed = await showSafetyFirstGate();
+      if(!proceed) return;
+    }
     const newState = node.state === 'Open' ? 'Closed' : 'Open';
     if(activeView === 'realtime'){
       try{
@@ -2659,7 +2698,7 @@
           ? `<span class="tag" style="background:rgba(61,214,140,.14);color:var(--live);">Live</span>`
           : feederOff
             ? `<span class="tag" style="background:rgba(75,85,96,.2);color:var(--feeder-off);">Feeder off</span>`
-            : `<span class="tag" style="background:rgba(27,95,168,.14);color:var(--isolated);">Isolated</span>`;
+            : `<span class="tag" style="background:rgba(240,180,41,.14);color:var(--isolated);">Isolated</span>`;
       const tr = document.createElement('tr');
       tr.dataset.id = line.id;
       tr.innerHTML = `
