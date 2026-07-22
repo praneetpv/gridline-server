@@ -1377,10 +1377,25 @@
   // Tap has no on/off switch of its own (always effectively "Closed"), but it can still have a
   // ring interlink land on it, so the same dual-feed hazard (two live paths converging unsynchronized)
   // is just as real there as at an AB/RMU.
-  function hasDualFeedWarning(node){
+  //
+  // A closed interlink alone isn't a hazard — that's the normal way a ring is run in Indian
+  // distribution practice: one AB/RMU somewhere else along the ring stays open (the "open point"),
+  // so power only ever reaches a given junction from one direction at a time, even with every
+  // interlink left NC. It's only a genuine dual feed when BOTH sides of the interlink are already
+  // energized on their own, radial, non-interlink path (primaryEnergized) — i.e. two independently
+  // live sources are about to be tied together — not when one side is only live *because of* this
+  // very interlink (that's a normal single-direction backfeed into a de-energized segment).
+  function hasDualFeedWarning(node, primaryEnergized){
     if(node.kind !== 'breaker') return false;
     if(node.state === 'Open') return false;
-    return interlinksTouchingNode(node.id).some(t=>t.switchState==='NC');
+    const primary = primaryEnergized || computePowerFlow().primary;
+    if(!primary.has(fromVertexKey(node))) return false; // this junction has no supply of its own
+    return interlinksTouchingNode(node.id).some(t=>{
+      if(t.switchState !== 'NC') return false;
+      const otherId = t.nodeAId === node.id ? t.nodeBId : t.nodeAId;
+      const other = nodeById(otherId);
+      return !!(other && primary.has(fromVertexKey(other))); // other side also independently live
+    });
   }
 
   // switchable defaults to false: the normal case in Indian distribution practice is that a ring
@@ -1987,7 +2002,7 @@
         const label = el('text', {x:p.x, y:p.y+34, 'text-anchor':'middle', fill: isOpen ? 'var(--disabled)' : 'var(--muted)',
           'font-family':'ui-monospace, monospace', 'font-size':10}, g);
         label.textContent = node.label + (isOpen ? '  (OPEN)' : '');
-        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+AB_HALF+4, p.y-AB_HALF-2);
+        if(hasDualFeedWarning(node, primaryEnergized)) drawWarningBadge(g, p.x+AB_HALF+4, p.y-AB_HALF-2);
         // AB has no node-attached transformer capability (see NODE_TX_TYPES) — any transformer on
         // its incoming line now renders on that line itself, not clustered here.
       } else if(node.breakerType === 'RMU'){
@@ -1998,7 +2013,7 @@
         const label = el('text', {x:p.x, y:p.y+34, 'text-anchor':'middle', fill: isOpen ? 'var(--disabled)' : 'var(--muted)',
           'font-family':'ui-monospace, monospace', 'font-size':10}, g);
         label.textContent = node.label + (isOpen ? '  (OPEN)' : '');
-        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+NODE_R-4, p.y-NODE_R+4);
+        if(hasDualFeedWarning(node, primaryEnergized)) drawWarningBadge(g, p.x+NODE_R-4, p.y-NODE_R+4);
 
         // Only a transformer attached directly to this RMU node renders here — one tapped onto its
         // incoming line instead renders on that line itself (see the edges loop above).
@@ -2011,7 +2026,7 @@
         const label = el('text', {x:p.x, y:p.y+28, 'text-anchor':'middle', fill:'var(--muted)',
           'font-family':'ui-monospace, monospace', 'font-size':10}, g);
         label.textContent = node.label;
-        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+9, p.y-9);
+        if(hasDualFeedWarning(node, primaryEnergized)) drawWarningBadge(g, p.x+9, p.y-9);
         // Split has no node-attached transformer capability — any transformer on its incoming
         // line now renders on that line itself, not clustered here.
       } else { // Tap — fixed branch off an AB/RMU/Split; may dead-end or continue further lines.
@@ -2022,7 +2037,7 @@
         const label = el('text', {x:p.x, y:p.y+32, 'text-anchor':'middle', fill:'var(--muted)',
           'font-family':'ui-monospace, monospace', 'font-size':10}, g);
         label.textContent = node.label;
-        if(hasDualFeedWarning(node)) drawWarningBadge(g, p.x+half, p.y-half);
+        if(hasDualFeedWarning(node, primaryEnergized)) drawWarningBadge(g, p.x+half, p.y-half);
 
         // A transformer attached directly to this Tap node always renders here. One tapped onto
         // its incoming line (lineId) also renders here instead of on the line itself, but only
@@ -2140,7 +2155,7 @@
     if(dualFeedWarning){
       warningHtml = `<div class="row" style="background:rgba(242,101,122,.14);border:1px solid rgba(242,101,122,.4);border-radius:6px;padding:8px;margin-top:10px;flex-direction:column;align-items:flex-start;gap:2px;">
         <b style="color:var(--danger);">⚠ Dual feed</b>
-        <span style="color:var(--text);white-space:normal;">Incoming is Closed and ${closedTouchingInterlinks.length>1?'a backfeed interlink is':'a backfeed interlink ('+closedTouchingInterlinks[0].name+') is'} also Closed. Verify sources are synchronized before running both.</span>
+        <span style="color:var(--text);white-space:normal;">This point is being fed from its own incoming line AND ${closedTouchingInterlinks.length>1?'a closed backfeed interlink':'the closed backfeed interlink ('+closedTouchingInterlinks[0].name+')'} at the same time — both sides are independently live. Verify sources are synchronized before running both.</span>
       </div>`;
     }
 
