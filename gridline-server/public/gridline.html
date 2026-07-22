@@ -2375,7 +2375,11 @@
     const exportBtn = document.getElementById('export-excel-btn');
     const printBtn = document.getElementById('print-btn');
     const simTab = document.getElementById('tab-simulator');
-    if(importBtn) importBtn.style.display = nonAdmin ? 'none' : '';
+    // Import Excel has no real function left in the Realtime view (the backend is the source of
+    // truth there) — hidden there for every role, including admin. It's still needed in the
+    // Simulator view (building/editing a what-if network from a workbook), so that path keeps the
+    // existing admin-only rule.
+    if(importBtn) importBtn.style.display = (activeView === 'realtime' || nonAdmin) ? 'none' : '';
     if(exportBtn) exportBtn.style.display = nonAdmin ? 'none' : '';
     if(printBtn) printBtn.style.display = nonAdmin ? 'none' : '';
     if(simTab) simTab.style.display = nonAdmin ? 'none' : '';
