@@ -2,6 +2,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { recordChange, toEventPayload } = require('../utils/audit');
 const { broadcastEvent } = require('../realtime/socket');
+const { requireRole } = require('../auth/auth.middleware');
 
 const router = express.Router();
 
@@ -9,7 +10,11 @@ function via(req) {
   return req.headers['x-client-type'] === 'mobile' ? 'mobile' : 'web';
 }
 
-router.post('/', async (req, res) => {
+// Creating or deleting a transformer changes the network topology itself — restricted to admin/
+// control_center. field_staff can still PATCH (capacity/pole/load-reading/fault-history) below.
+const canManageEntities = requireRole('admin', 'control_center');
+
+router.post('/', canManageEntities, async (req, res) => {
   const {
     name, capacityKva, nodeId, lineId,
     poleName, loadR, loadY, loadB, loadCapturedAt, lastFaultDate, lastFaultReason,
@@ -79,7 +84,7 @@ router.patch('/:id', async (req, res) => {
   res.json(after);
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManageEntities, async (req, res) => {
   const { rows } = await pool.query('delete from transformers where id = $1 returning *', [req.params.id]);
   if (rows.length === 0) return res.status(404).json({ error: 'transformer not found' });
 

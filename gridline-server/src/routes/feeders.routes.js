@@ -4,6 +4,11 @@ const { versionedUpdate, VersionConflictError } = require('../utils/versioning')
 const { recordChange, toEventPayload } = require('../utils/audit');
 const { broadcastEvent } = require('../realtime/socket');
 const { pickColumns } = require('../utils/fields');
+const { requireRole } = require('../auth/auth.middleware');
+
+// Creating or deleting a feeder changes the network topology itself — restricted to admin/
+// control_center. field_staff can still PATCH (switch on/off, edit details) via the routes below.
+const canManageEntities = requireRole('admin', 'control_center');
 
 const COLUMN_BY_FIELD = {
   state: 'state', name: 'name', kv: 'kv', location: 'location', poc: 'poc',
@@ -16,7 +21,7 @@ function via(req) {
   return req.headers['x-client-type'] === 'mobile' ? 'mobile' : 'web';
 }
 
-router.post('/', async (req, res) => {
+router.post('/', canManageEntities, async (req, res) => {
   const { sectionId, name, kv, location, poc, state, risks, lastTripped } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name is required' });
 
@@ -66,7 +71,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManageEntities, async (req, res) => {
   const { rows } = await pool.query('delete from feeders where id = $1 returning *', [req.params.id]);
   if (rows.length === 0) return res.status(404).json({ error: 'feeder not found' });
 

@@ -4,6 +4,7 @@ const { versionedUpdate, VersionConflictError } = require('../utils/versioning')
 const { recordChange, toEventPayload } = require('../utils/audit');
 const { broadcastEvent } = require('../realtime/socket');
 const { pickColumns } = require('../utils/fields');
+const { requireRole } = require('../auth/auth.middleware');
 
 const COLUMN_BY_FIELD = {
   switchState: 'switch_state', name: 'name', switchable: 'switchable', breakerType: 'breaker_type',
@@ -15,7 +16,11 @@ function via(req) {
   return req.headers['x-client-type'] === 'mobile' ? 'mobile' : 'web';
 }
 
-router.post('/', async (req, res) => {
+// Creating or deleting a ring interlink changes the network topology itself — restricted to
+// admin/control_center. field_staff can still PATCH (open/close a switchable interlink) below.
+const canManageEntities = requireRole('admin', 'control_center');
+
+router.post('/', canManageEntities, async (req, res) => {
   const { name, nodeAId, nodeBId, breakerType, switchable, switchState } = req.body || {};
   if (!name || !nodeAId || !nodeBId || !breakerType) {
     return res.status(400).json({ error: 'name, nodeAId, nodeBId, and breakerType are required' });
@@ -82,7 +87,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManageEntities, async (req, res) => {
   const { rows } = await pool.query('delete from interlinks where id = $1 returning *', [req.params.id]);
   if (rows.length === 0) return res.status(404).json({ error: 'interlink not found' });
 

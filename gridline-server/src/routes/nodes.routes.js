@@ -4,6 +4,7 @@ const { versionedUpdate, VersionConflictError } = require('../utils/versioning')
 const { recordChange, toEventPayload } = require('../utils/audit');
 const { deleteNodeCascade } = require('../utils/cascade');
 const { broadcastEvent } = require('../realtime/socket');
+const { requireRole } = require('../auth/auth.middleware');
 
 const router = express.Router();
 
@@ -11,7 +12,11 @@ function via(req) {
   return req.headers['x-client-type'] === 'mobile' ? 'mobile' : 'web';
 }
 
-router.post('/', async (req, res) => {
+// Creating or deleting a node changes the network topology itself — restricted to admin/
+// control_center. field_staff can still PATCH (open/close an AB/RMU switch, rename) below.
+const canManageEntities = requireRole('admin', 'control_center');
+
+router.post('/', canManageEntities, async (req, res) => {
   const { feederId, kind, breakerType, label, state } = req.body || {};
   if (!feederId || !kind || !label) {
     return res.status(400).json({ error: 'feederId, kind, and label are required' });
@@ -79,7 +84,7 @@ router.patch('/:id', async (req, res) => {
 
 // Direct node deletion — see utils/cascade.js deleteNodeCascade for when this is (and isn't) the
 // right entry point versus DELETE /api/lines/:id.
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManageEntities, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

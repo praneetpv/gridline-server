@@ -5,6 +5,7 @@ const { recordChange, toEventPayload } = require('../utils/audit');
 const { deleteLineCascade } = require('../utils/cascade');
 const { broadcastEvent } = require('../realtime/socket');
 const { pickColumns } = require('../utils/fields');
+const { requireRole } = require('../auth/auth.middleware');
 
 const COLUMN_BY_FIELD = { breakerState: 'breaker_state', name: 'name' };
 
@@ -14,7 +15,11 @@ function via(req) {
   return req.headers['x-client-type'] === 'mobile' ? 'mobile' : 'web';
 }
 
-router.post('/', async (req, res) => {
+// Creating or deleting a line changes the network topology itself — restricted to admin/
+// control_center. field_staff can still PATCH (open/close an RMU bay, rename) below.
+const canManageEntities = requireRole('admin', 'control_center');
+
+router.post('/', canManageEntities, async (req, res) => {
   const { feederId, fromNodeId, toNodeId, name, breakerState } = req.body || {};
   if (!feederId || !fromNodeId || !toNodeId || !name) {
     return res.status(400).json({ error: 'feederId, fromNodeId, toNodeId, and name are required' });
@@ -67,7 +72,7 @@ router.patch('/:id', async (req, res) => {
 });
 
 // "Delete this branch" (see the client's confirm dialog) — cascades to everything downstream.
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManageEntities, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

@@ -450,25 +450,27 @@
     <div id="sidebar">
 
       <div class="section">
-        <p class="section-title">Add feeder</p>
-        <label>Feeder / source name</label>
-        <input type="text" id="feeder-name" placeholder="e.g. 11kV Feeder-3">
-        <p class="empty-hint" id="feeder-name-error" style="display:none;color:var(--danger);margin-top:4px;"></p>
-        <label>Voltage (kV)</label>
-        <input type="number" id="feeder-kv" placeholder="e.g. 11" step="0.1">
-        <label>Location identification</label>
-        <input type="text" id="feeder-location" placeholder="e.g. Substation-4, Bay 2">
-        <label>Nearest point of contact (dept.)</label>
-        <input type="text" id="feeder-poc" placeholder="e.g. O&M Circle-2, J. Menon">
-        <label>Known risks / remarks</label>
-        <input type="text" id="feeder-risks" placeholder="e.g. Tree overgrowth near tower 14">
-        <label>Last tripped</label>
-        <input type="datetime-local" id="feeder-last-tripped">
-        <button class="btn-primary" id="add-feeder-btn">+ Add feeder</button>
+        <div id="add-feeder-form">
+          <p class="section-title">Add feeder</p>
+          <label>Feeder / source name</label>
+          <input type="text" id="feeder-name" placeholder="e.g. 11kV Feeder-3">
+          <p class="empty-hint" id="feeder-name-error" style="display:none;color:var(--danger);margin-top:4px;"></p>
+          <label>Voltage (kV)</label>
+          <input type="number" id="feeder-kv" placeholder="e.g. 11" step="0.1">
+          <label>Location identification</label>
+          <input type="text" id="feeder-location" placeholder="e.g. Substation-4, Bay 2">
+          <label>Nearest point of contact (dept.)</label>
+          <input type="text" id="feeder-poc" placeholder="e.g. O&M Circle-2, J. Menon">
+          <label>Known risks / remarks</label>
+          <input type="text" id="feeder-risks" placeholder="e.g. Tree overgrowth near tower 14">
+          <label>Last tripped</label>
+          <input type="datetime-local" id="feeder-last-tripped">
+          <button class="btn-primary" id="add-feeder-btn">+ Add feeder</button>
+        </div>
         <div id="feeder-list" style="margin-top:12px;"></div>
       </div>
 
-      <div class="section">
+      <div class="section" id="section-add-line">
         <p class="section-title">Add HT line + breaker</p>
         <label>Feeder</label>
         <select id="line-feeder"></select>
@@ -527,7 +529,7 @@
         <p class="empty-hint" id="line-hint" style="margin-top:10px;"></p>
       </div>
 
-      <div class="section">
+      <div class="section" id="section-add-interlink">
         <p class="section-title">Close a ring (interlink line)</p>
         <p class="empty-hint" style="margin-bottom:10px;">Connects two existing breakers — often across feeders — to close a ring. No new node is created.</p>
         <label>Node A</label>
@@ -557,7 +559,7 @@
         <p class="empty-hint" id="interlink-hint" style="margin-top:10px;"></p>
       </div>
 
-      <div class="section">
+      <div class="section" id="section-add-linetx">
         <p class="section-title">Transformers along a line</p>
         <p class="empty-hint" style="margin-bottom:10px;">Distribution transformers tapped off an HT line between its start and end — separate from a transformer sitting on an RMU.</p>
         <label>Line</label>
@@ -694,6 +696,32 @@
   function isMobileClient(){
     return window.matchMedia('(max-width: 860px)').matches || /Mobi|Android/i.test(navigator.userAgent);
   }
+
+  // The login JWT already carries the user's role in its payload (see gridline-server
+  // auth.routes.js), so role can be read straight off whatever token is currently stored — on a
+  // fresh login and equally after a page reload that resumes an existing session — without a
+  // separate profile endpoint or persisting the user object alongside the token. This is a plain
+  // base64 decode for UI purposes only; it doesn't verify the signature, since the server is the
+  // one actually enforcing anything security-relevant on every API call regardless of what the UI
+  // chooses to show or hide.
+  function decodeJwtPayload(token){
+    if(!token) return null;
+    try{
+      const base64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+      const json = decodeURIComponent(atob(base64).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      return JSON.parse(json);
+    }catch(e){ return null; }
+  }
+  function currentRole(){
+    const payload = decodeJwtPayload(backend.getToken());
+    return payload ? payload.role : null;
+  }
+  // field_staff: no provision to create or delete network entities — they operate existing
+  // switches/breakers in the field, they don't build or tear down the topology.
+  function isFieldStaff(){ return currentRole() === 'field_staff'; }
+  // Anyone who isn't admin gets the simplified toolbar (no Import/Export Excel, no Print, no
+  // Simulator, legend starts collapsed) — admin is the only role that needs those.
+  function isNonAdminRole(){ const r = currentRole(); return !!r && r !== 'admin'; }
 
   const backend = {
     token: null,
@@ -1484,6 +1512,7 @@
       btn.classList.toggle('active', btn.dataset.view === view);
     });
     updateBackendStatusIndicator();
+    applyRoleUI();
     renderAll();
   }
 
@@ -2147,7 +2176,7 @@
     rows += `<div class="row"><span>State</span><b>${isClosed ? 'Closed (feeding through)' : 'Open'}</b></div>`;
     const toggleLabel = isClosed ? 'Open interlink (restore normal)' : 'Close interlink (backfeed)';
     const toggleBtn = `<button class="btn-secondary" style="margin-top:10px;width:100%;" id="inspector-interlink-toggle">${toggleLabel}</button>`;
-    const delBtn = `<button class="btn-danger" style="margin-top:8px;width:100%;" id="inspector-del">Delete this interlink</button>`;
+    const delBtn = isFieldStaff() ? '' : `<button class="btn-danger" style="margin-top:8px;width:100%;" id="inspector-del">Delete this interlink</button>`;
     box.innerHTML = `<span class="close" id="inspector-close">✕</span><h3>${interlink.name}</h3>${rows}${toggleBtn}${delBtn}`;
     box.style.display = 'block';
     positionInspector(box);
@@ -2156,10 +2185,12 @@
       box.style.display='none';
       toggleInterlinkState(interlink.id);
     };
-    document.getElementById('inspector-del').onclick = ()=>{
-      box.style.display='none';
-      deleteInterlink(interlink.id);
-    };
+    if(!isFieldStaff()){
+      document.getElementById('inspector-del').onclick = ()=>{
+        box.style.display='none';
+        deleteInterlink(interlink.id);
+      };
+    }
   }
 
   function showInspector(node){
@@ -2250,7 +2281,7 @@
       }
     }
     let delBtn = '';
-    if(incoming){
+    if(incoming && !isFieldStaff()){
       delBtn = `<button class="btn-danger" style="margin-top:8px;width:100%;" id="inspector-del">Delete this branch</button>`;
     }
     box.innerHTML = `<span class="close" id="inspector-close">✕</span><h3>${node.label}</h3>${rows}${toggleBtn}${warningHtml}${interlinksHtml}${baysHtml}${delBtn}`;
@@ -2275,7 +2306,7 @@
         toggleInterlinkState(btn.dataset.incomingInterlinkId);
       };
     });
-    if(incoming){
+    if(incoming && !isFieldStaff()){
       document.getElementById('inspector-del').onclick = ()=>{
         if(confirm(`Delete branch "${node.label}" (line "${incoming.name}")? This also removes everything downstream of it.`)){
           box.style.display='none';
@@ -2325,6 +2356,47 @@
     });
   }
 
+  // Applied once right after the role becomes known (fresh login, or resuming a stored session on
+  // reload) so the legend's default state for a non-admin session starts collapsed without fighting
+  // a manual expand the user does later in the same session.
+  let legendDefaultApplied = false;
+
+  // Role-gated chrome: admin gets the full toolbar; any other logged-in role gets a simplified one
+  // (no Import/Export Excel, no Print, no Simulator, legend starts collapsed). field_staff
+  // additionally loses every add/delete-entity control — they operate existing switches in the
+  // field, they don't build or tear down the topology. This is purely a UI convenience; the backend
+  // isn't gated by role beyond what already exists, so treat this as a workflow simplification, not
+  // a security boundary.
+  function applyRoleUI(){
+    const nonAdmin = isNonAdminRole();
+    const fieldStaff = isFieldStaff();
+
+    const importBtn = document.getElementById('import-excel-btn');
+    const exportBtn = document.getElementById('export-excel-btn');
+    const printBtn = document.getElementById('print-btn');
+    const simTab = document.getElementById('tab-simulator');
+    if(importBtn) importBtn.style.display = nonAdmin ? 'none' : '';
+    if(exportBtn) exportBtn.style.display = nonAdmin ? 'none' : '';
+    if(printBtn) printBtn.style.display = nonAdmin ? 'none' : '';
+    if(simTab) simTab.style.display = nonAdmin ? 'none' : '';
+
+    ['add-feeder-form', 'section-add-line', 'section-add-interlink', 'section-add-linetx'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.style.display = fieldStaff ? 'none' : '';
+    });
+
+    // On mobile, the sidebar (and every add form in it) is only reachable through this hamburger
+    // button — hiding the button itself is simpler and more robust than hiding the drawer's
+    // contents piecemeal, and matches how field staff would expect the app to behave on a phone.
+    const menuBtn = document.getElementById('mobile-menu-btn');
+    if(menuBtn) menuBtn.style.display = (fieldStaff && isMobileClient()) ? 'none' : '';
+
+    if(nonAdmin && !legendDefaultApplied){
+      legendCollapsed = true;
+    }
+    legendDefaultApplied = true;
+  }
+
   // ---------- forms ----------
   function renderFeederList(){
     const list = document.getElementById('feeder-list');
@@ -2351,13 +2423,15 @@
       power.title = isOff ? 'Switch feeder ON' : 'Switch feeder OFF';
       power.addEventListener('click', (e)=>{ e.stopPropagation(); toggleFeederState(f.id); });
       chip.appendChild(power);
-      const del = document.createElement('button');
-      del.className = 'btn-danger'; del.textContent = '✕';
-      del.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        if(confirm(`Delete feeder "${f.name}" and its entire network?`)) deleteFeeder(f.id);
-      });
-      chip.appendChild(del);
+      if(!isFieldStaff()){
+        const del = document.createElement('button');
+        del.className = 'btn-danger'; del.textContent = '✕';
+        del.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          if(confirm(`Delete feeder "${f.name}" and its entire network?`)) deleteFeeder(f.id);
+        });
+        chip.appendChild(del);
+      }
       list.appendChild(chip);
     }
   }
@@ -2387,7 +2461,7 @@
       <button class="${isOff?'btn-primary':'btn-danger'}" style="margin-top:14px;width:100%;" id="feeder-modal-power">${isOff ? 'Switch feeder ON' : 'Switch feeder OFF'}</button>
       <div class="modal-actions">
         <button class="btn-secondary" id="feeder-modal-cancel">Cancel</button>
-        <button class="btn-danger" style="flex:1;" id="feeder-modal-delete">Delete feeder</button>
+        ${isFieldStaff() ? '' : '<button class="btn-danger" style="flex:1;" id="feeder-modal-delete">Delete feeder</button>'}
         <button class="btn-primary" style="margin-top:0;" id="feeder-modal-save">Save</button>
       </div>
     `;
@@ -2399,12 +2473,14 @@
       closeModal();
       toggleFeederState(f.id);
     };
-    document.getElementById('feeder-modal-delete').onclick = ()=>{
-      if(confirm(`Delete feeder "${f.name}" and its entire network?`)){
-        closeModal();
-        deleteFeeder(f.id);
-      }
-    };
+    if(!isFieldStaff()){
+      document.getElementById('feeder-modal-delete').onclick = ()=>{
+        if(confirm(`Delete feeder "${f.name}" and its entire network?`)){
+          closeModal();
+          deleteFeeder(f.id);
+        }
+      };
+    }
     document.getElementById('feeder-modal-save').onclick = async ()=>{
       const oldName = f.name;
       const newName = document.getElementById('edit-feeder-name').value.trim() || f.name;
@@ -2493,7 +2569,7 @@
       <input type="text" id="edit-tx-fault-reason" value="${escapeAttr(tx.lastFaultReason)}">
       <div class="modal-actions">
         <button class="btn-secondary" id="feeder-modal-cancel">Cancel</button>
-        <button class="btn-danger" id="feeder-modal-delete">Delete</button>
+        ${isFieldStaff() ? '' : '<button class="btn-danger" id="feeder-modal-delete">Delete</button>'}
         <button class="btn-primary" style="margin-top:0;" id="feeder-modal-save">Save</button>
       </div>
     `;
@@ -2501,12 +2577,14 @@
     document.getElementById('feeder-modal-close').onclick = closeModal;
     document.getElementById('feeder-modal-cancel').onclick = closeModal;
     backdrop.onclick = (e)=>{ if(e.target === backdrop) closeModal(); };
-    document.getElementById('feeder-modal-delete').onclick = ()=>{
-      if(confirm(`Delete transformer "${tx.name}"?`)){
-        closeModal();
-        deleteTransformer(tx.id);
-      }
-    };
+    if(!isFieldStaff()){
+      document.getElementById('feeder-modal-delete').onclick = ()=>{
+        if(confirm(`Delete transformer "${tx.name}"?`)){
+          closeModal();
+          deleteTransformer(tx.id);
+        }
+      };
+    }
     document.getElementById('feeder-modal-save').onclick = async ()=>{
       const newName = document.getElementById('edit-tx-name').value.trim() || tx.name;
       const newCapacity = Number(document.getElementById('edit-tx-kva').value) || 0;
@@ -2671,13 +2749,15 @@
       chip.innerHTML = `<span class="dot" style="background:var(--violet)"></span><span class="name">${tx.name}${tx.capacity?' · '+tx.capacity+'kVA':''}</span>`;
       chip.title = 'Click to view / edit this transformer';
       chip.addEventListener('click', ()=>openTransformerModal(tx.id));
-      const del = document.createElement('button');
-      del.className = 'btn-danger'; del.textContent = '✕';
-      del.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        if(confirm(`Delete transformer "${tx.name}"?`)) deleteTransformer(tx.id);
-      });
-      chip.appendChild(del);
+      if(!isFieldStaff()){
+        const del = document.createElement('button');
+        del.className = 'btn-danger'; del.textContent = '✕';
+        del.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          if(confirm(`Delete transformer "${tx.name}"?`)) deleteTransformer(tx.id);
+        });
+        chip.appendChild(del);
+      }
       container.appendChild(chip);
     }
   }
@@ -2716,9 +2796,11 @@
         <td><span class="tag ${tagClassForType(to&&to.breakerType)}">${to?to.breakerType:''}</span></td>
         <td>${statusHtml}</td>
         <td>${(tx ? tx.name+(tx.capacity?` (${tx.capacity}kVA)`:'') : '—')}${tapNote}</td>
-        <td><button class="btn-danger" data-id="${line.id}">✕</button></td>
+        <td>${isFieldStaff() ? '' : `<button class="btn-danger" data-id="${line.id}">✕</button>`}</td>
       `;
-      tr.querySelector('button').onclick = ()=>deleteLine(line.id);
+      if(!isFieldStaff()){
+        tr.querySelector('button').onclick = ()=>deleteLine(line.id);
+      }
       body.appendChild(tr);
     }
   }
@@ -2743,10 +2825,12 @@
         <td>${b?b.label:'—'}</td>
         <td><span class="tag ${interlink.breakerType==='RMU'?'tag-rmu':'tag-ab'}">${interlink.breakerType}</span></td>
         <td>${interlink.switchState==='NC' ? 'Closed' : 'Open'}</td>
-        <td><button class="btn-danger" data-id="${interlink.id}">✕</button></td>
+        <td>${isFieldStaff() ? '' : `<button class="btn-danger" data-id="${interlink.id}">✕</button>`}</td>
       `;
-      const delBtn = tr.querySelector('button');
-      delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteInterlink(interlink.id); });
+      if(!isFieldStaff()){
+        const delBtn = tr.querySelector('button');
+        delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteInterlink(interlink.id); });
+      }
       body.appendChild(tr);
     }
   }
