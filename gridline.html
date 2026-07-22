@@ -3448,6 +3448,12 @@
     });
     flashCanvasPoint(target.x, target.y);
 
+    // Field staff are out in the field acting on the equipment itself — for them, panning/highlighting
+    // the entity on the diagram IS the result; they then tap the entity directly on the canvas to
+    // operate it. Popping up a details panel on top would just be an extra tap to dismiss. Everyone
+    // else (admin/control_center) still gets the details panel opened automatically, same as before.
+    if(isFieldStaff()) return;
+
     // Open whatever details panel that entity type normally shows on a direct click, so "pan to
     // see more details" lands the user right on the relevant information.
     if(type === 'Feeder'){
