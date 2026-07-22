@@ -82,6 +82,8 @@
   .stats{display:flex;gap:18px;font-family:var(--mono);font-size:11px;color:var(--muted);}
   .stats b{color:var(--text);font-size:13px;display:block;font-weight:600;}
   .stats div{text-align:right;}
+  #stat-faults-wrap.has-faults{cursor:help;}
+  #stat-faults-wrap.has-faults b{color:var(--danger);}
 
   /* ---------- view tabs ---------- */
   #view-tabs{
@@ -416,6 +418,7 @@
       <div><b id="stat-tx">0</b>transformers</div>
       <div><b id="stat-kva">0</b>kVA connected</div>
       <div><b id="stat-amps">0</b>total load (A)</div>
+      <div id="stat-faults-wrap"><b id="stat-faults">0</b>faults logged</div>
     </div>
   </header>
 
@@ -795,10 +798,17 @@
     };
   }
   function mapTransformerFromServer(row){
+    // load_r/load_y/load_b are numeric columns in Postgres, which the pg driver returns as strings
+    // (to avoid floating-point rounding on money/precision-sensitive values) — they must be coerced
+    // to real numbers here, same as capacity_kva just above, otherwise renderStats()'s "total load"
+    // sum (which checks typeof === 'number') silently treats every Realtime-view transformer's load
+    // as 0 even though the value was saved correctly to the database.
     return {
       id: row.id, name: row.name, capacity: row.capacity_kva != null ? Number(row.capacity_kva) : 0,
-      poleName: row.pole_name || '', loadR: row.load_r != null ? row.load_r : '',
-      loadY: row.load_y != null ? row.load_y : '', loadB: row.load_b != null ? row.load_b : '',
+      poleName: row.pole_name || '',
+      loadR: row.load_r != null && row.load_r !== '' ? Number(row.load_r) : '',
+      loadY: row.load_y != null && row.load_y !== '' ? Number(row.load_y) : '',
+      loadB: row.load_b != null && row.load_b !== '' ? Number(row.load_b) : '',
       loadCapturedAt: row.load_captured_at || '', lastFaultDate: row.last_fault_date || '',
       lastFaultReason: row.last_fault_reason || '', nodeId: row.node_id, lineId: row.line_id,
     };
@@ -890,7 +900,15 @@
       return;
     }
 
-    // plain field update — translate the server's column name back to the client's field name.
+    // plain field update — the server always includes the full updated row as evt.entity (see
+    // toEventPayload in gridline-server/src/utils/audit.js), so re-map and merge the WHOLE entity
+    // rather than trusting evt.field/evt.newValue alone. This matters for any route that changes
+    // several columns in a single PATCH — the transformer edit modal saves name/capacity/pole/
+    // load-R-Y-B/fault-date/fault-reason together, and the server's audit row only ever records one
+    // "changed field" name. A single-field patch here would apply just that one field and silently
+    // drop the rest, which is exactly why a transformer's load and fault updates made by one user
+    // weren't showing up in real time (including the header's "total load" stat) for everyone else
+    // watching the same Realtime view.
     const fieldMapByEntity = {
       feeder: {state:'state', name:'name', kv:'kv', location:'location', poc:'poc', risks:'risks', last_tripped:'lastTripped'},
       node: {state:'state', label:'label'},
@@ -903,13 +921,28 @@
       feeder: state.feeders, node: state.nodes, line: state.lines,
       interlink: state.interlinks, transformer: state.transformers,
     };
+    const mapperByEntity = {
+      feeder: mapFeederFromServer, node: mapNodeFromServer, line: mapLineFromServer,
+      interlink: mapInterlinkFromServer, transformer: mapTransformerFromServer,
+    };
     const collection = collectionByEntity[entityType];
-    if(!collection || !evt.field) return;
+    if(!collection) return;
     const target = collection.find(x=>x.id===evt.entityId);
     if(!target) return;
-    const clientField = (fieldMapByEntity[entityType]||{})[evt.field] || evt.field;
-    target[clientField] = evt.newValue;
-    if(evt.version != null) target.version = evt.version;
+
+    const mapper = mapperByEntity[entityType];
+    if(evt.entity && mapper){
+      const sourceId = target.sourceId; // feeder-only, backfilled at load time — the mapper always nulls it out
+      Object.assign(target, mapper(evt.entity));
+      if(entityType === 'feeder') target.sourceId = sourceId;
+    } else if(evt.field){
+      // Defensive fallback for any older/partial event that only carries a single changed field.
+      const clientField = (fieldMapByEntity[entityType]||{})[evt.field] || evt.field;
+      target[clientField] = evt.newValue;
+      if(evt.version != null) target.version = evt.version;
+    } else {
+      return;
+    }
     renderAll();
   }
 
@@ -2865,6 +2898,22 @@
     ampsEl.textContent = totalAmps.toLocaleString();
     const totalKw = (totalAmps * 250) / 1000;
     ampsEl.title = `${totalKw.toLocaleString(undefined, { maximumFractionDigits: 2 })} kW`;
+
+    // Every fault date/reason captured through a transformer's popup (add form or edit modal) rolls
+    // up into this one consolidated count so the distribution company can see at a glance, from the
+    // header, whether anything needs attention — without opening each transformer individually. This
+    // refreshes on every renderAll(), which fires on every local edit AND on every realtime broadcast
+    // from other users, so it stays live for anyone watching the same Realtime view.
+    const faulted = state.transformers
+      .filter(t => (t.lastFaultDate || '').trim() || (t.lastFaultReason || '').trim())
+      .sort((a, b) => String(b.lastFaultDate || '').localeCompare(String(a.lastFaultDate || '')));
+    const faultsWrap = document.getElementById('stat-faults-wrap');
+    const faultsEl = document.getElementById('stat-faults');
+    faultsEl.textContent = faulted.length;
+    faultsWrap.classList.toggle('has-faults', faulted.length > 0);
+    faultsWrap.title = faulted.length
+      ? faulted.map(t => `${t.name}: ${t.lastFaultDate ? new Date(t.lastFaultDate).toLocaleString() : 'date not recorded'} — ${t.lastFaultReason || 'reason not recorded'}`).join('\n')
+      : 'No faults logged on any transformer';
   }
 
   // Shows the section name (from the "Section" sheet) as a heading above the diagram — hidden
