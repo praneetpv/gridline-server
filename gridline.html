@@ -986,10 +986,28 @@
   async function ensureRealtimeConnected(){
     if(statesByView.realtime && backend.connected) return statesByView.realtime;
     await ensureLoggedIn();
-    const s = await loadRealtimeFromServer();
-    connectRealtimeSocket();
-    updateBackendStatusIndicator();
-    return s;
+    try{
+      const s = await loadRealtimeFromServer();
+      connectRealtimeSocket();
+      updateBackendStatusIndicator();
+      return s;
+    }catch(e){
+      // ensureLoggedIn() only checks that *some* token is stored — it can't tell a stale/expired
+      // one from a good one until the server actually rejects it. Previously a 401 here bubbled up
+      // to switchView's catch, which just alert()'d and gave up, leaving the user stuck with no way
+      // back to the sign-in form (the invalid token was still sitting in storage, so ensureLoggedIn
+      // would keep "succeeding" on every retry). Instead: discard the bad token and show the sign-in
+      // form fresh, then retry once with whatever token that produces.
+      if(e && e.status === 401){
+        backend.clearToken();
+        await ensureLoggedIn();
+        const s = await loadRealtimeFromServer();
+        connectRealtimeSocket();
+        updateBackendStatusIndicator();
+        return s;
+      }
+      throw e;
+    }
   }
 
   // Shared by every toggle/mutation function below: 409 means someone else changed the same
