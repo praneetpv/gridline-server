@@ -2263,7 +2263,15 @@
       }
     }
 
-    // ring interlinks (dashed, drawn between two existing nodes, possibly across feeders)
+    // ring interlinks (dashed, drawn between two existing nodes, possibly across feeders) —
+    // suppressed during feeder-rotation presentation mode (Ctrl+R): a wallboard view of one feeder
+    // at a time reads as cluttered/tangled once a tie line reaches off toward another feeder that
+    // isn't even on screen, so every interlink is drawn fully transparent (opacity 0) rather than
+    // skipped outright while rotation is active — same position, same click target, same
+    // energized/backfeed styling and computation, it's only invisible on screen. Wrapping each one
+    // in its own group keeps this a single toggle per interlink instead of touching every element
+    // inside it individually.
+    const interlinksHidden = isFeederRotationActive();
     for(const interlink of state.interlinks){
       const p1 = positions[interlink.nodeAId], p2 = positions[interlink.nodeBId];
       if(!p1 || !p2) continue;
@@ -2273,9 +2281,11 @@
       const isLive = isClosed && ((avKey && energized.has(avKey)) || (bvKey && energized.has(bvKey)));
       const interlinkColor = isLive ? 'var(--live)' : 'var(--interlink)';
 
+      const interlinkGroup = el('g', interlinksHidden ? {opacity:0} : {}, linesLayer);
+
       const midX = (p1.x + p2.x)/2, midY = (p1.y + p2.y)/2;
       el('path', {d:`M ${p1.x} ${p1.y} L ${midX} ${midY} L ${p2.x} ${p2.y}`,
-        fill:'none', stroke:interlinkColor, 'stroke-width': isLive ? 2.2 : 1.8, 'stroke-dasharray':'5 4', opacity: isLive ? 0.95 : 0.75}, linesLayer);
+        fill:'none', stroke:interlinkColor, 'stroke-width': isLive ? 2.2 : 1.8, 'stroke-dasharray':'5 4', opacity: isLive ? 0.95 : 0.75}, interlinkGroup);
 
       if(isLive){
         // backfeed direction: from whichever side was primarily energized without this interlink, into the other
@@ -2288,11 +2298,11 @@
           const ux = dx/len, uy = dy/len;
           const tipX = ax+ux*7, tipY = ay+uy*7;
           const b1x = ax-uy*4-ux*5, b1y = ay+ux*4-uy*5, b2x = ax+uy*4-ux*5, b2y = ay-ux*4-uy*5;
-          el('path', {d:`M ${b1x} ${b1y} L ${tipX} ${tipY} L ${b2x} ${b2y} Z`, fill:interlinkColor}, linesLayer);
+          el('path', {d:`M ${b1x} ${b1y} L ${tipX} ${tipY} L ${b2x} ${b2y} Z`, fill:interlinkColor}, interlinkGroup);
         }
       }
 
-      const g = el('g', {}, linesLayer);
+      const g = el('g', {}, interlinkGroup);
       // Only an interlink explicitly marked switchable (a real physical switch on the interlink — the
       // rare case) opens the popup on click. The normal case has no switch on the interlink at all, so
       // there's nothing to operate there; it's opened/closed via the AB switches at its endpoints
@@ -3827,8 +3837,13 @@
   let feederRotationTimer = null;
   let feederRotationIndex = 0;
   let preRotationWindowState = null;
+  // Tracked separately from feederRotationTimer, which isn't assigned until AFTER the first
+  // showFeederInFullView() call completes (see startFeederRotation) — renderDiagram's interlink
+  // suppression needs to see rotation as already active on that very first render, not only from
+  // the second feeder onward.
+  let feederRotationActive = false;
 
-  function isFeederRotationActive(){ return feederRotationTimer !== null; }
+  function isFeederRotationActive(){ return feederRotationActive; }
 
   // Bounding box (in diagram-space/viewBox units, matching computeLayout's "positions" map) of
   // every node belonging to one feeder — used to zoom/pan that feeder to fill the canvas, the same
@@ -3895,10 +3910,26 @@
       viewTabsHidden: document.getElementById('view-tabs').style.display === 'none',
       zoomLevel, fitToScreen,
       scrollLeft: wrap.scrollLeft, scrollTop: wrap.scrollTop,
+      // Reclaim every bit of screen real estate a control-room wallboard can get: the legend and
+      // the section-name bar both take up real vertical/horizontal space above the diagram (see
+      // their CSS — the legend sits in normal flow at the top of canvas-wrap, the section heading is
+      // its own flex row above it), on top of the sidebar/tab-bar already hidden below. Both are
+      // restored to exactly how they were on Esc.
+      legendDisplay: document.getElementById('legend').style.display,
+      sectionHeadingCollapsed,
     };
+
+    // Set before the first render below (not after, unlike feederRotationTimer, which isn't
+    // assigned until this whole function returns) — renderDiagram's interlink suppression checks
+    // isFeederRotationActive() and must see it as true from the very first feeder shown, not only
+    // from the second one onward once the interval is ticking.
+    feederRotationActive = true;
 
     setSidebarCollapsed(true);
     document.getElementById('view-tabs').style.display = 'none';
+    document.getElementById('legend').style.display = 'none';
+    sectionHeadingCollapsed = true;
+    renderSectionHeading();
     positionZoomControls();
     document.getElementById('feeder-rotation-badge').classList.add('active');
     positionFeederRotationBadge();
@@ -3913,6 +3944,7 @@
 
   function stopFeederRotation(){
     if(!isFeederRotationActive()) return;
+    feederRotationActive = false;
     clearInterval(feederRotationTimer);
     feederRotationTimer = null;
     document.getElementById('feeder-rotation-badge').classList.remove('active');
@@ -3922,9 +3954,12 @@
     if(prev){
       document.getElementById('view-tabs').style.display = prev.viewTabsHidden ? 'none' : '';
       setSidebarCollapsed(prev.sidebarCollapsed);
+      document.getElementById('legend').style.display = prev.legendDisplay;
+      sectionHeadingCollapsed = prev.sectionHeadingCollapsed;
+      renderSectionHeading();
       zoomLevel = prev.zoomLevel;
       setFitToScreen(prev.fitToScreen, { skipRender: true });
-      renderDiagram();
+      renderDiagram(); // also un-suppresses the interlinks (isFeederRotationActive() is false by now)
       const wrap = document.getElementById('canvas-wrap');
       wrap.scrollLeft = prev.scrollLeft;
       wrap.scrollTop = prev.scrollTop;
