@@ -1928,10 +1928,94 @@
   }
 
   // ---------- layout ----------
+  // Feeders are stacked in one band per feeder, top to bottom (see computeLayout below). Left in
+  // raw creation/import order, a ring interlink between two feeders whose bands end up far apart
+  // has to be drawn as one long diagonal spanning every band in between (see the interlink drawing
+  // in renderDiagram) -- visually reading as clutter even though it's just one tie. This works out
+  // a better BAND ORDER so that feeders sharing an interlink land in adjacent bands wherever
+  // possible, keeping tie lines short and close to horizontal.
+  //
+  // Deliberately only reorders which band each feeder is drawn in -- state.feeders itself, and
+  // every list/dropdown built from it (sidebar feeder list, line/interlink/transformer selects,
+  // exports), is left untouched. It's also fully deterministic given the same feeders/interlinks,
+  // so the stacking order stays put across every re-render (a switch toggle, a realtime broadcast,
+  // Ctrl+R rotation, etc.) and only reshuffles when the topology itself actually changes.
+  //
+  // This is a greedy graph-traversal heuristic, not an exact minimum-crossing solution (that's an
+  // NP-hard arrangement problem) -- but it's cheap and works well in practice:
+  //   1. Build an undirected weighted graph: one node per feeder, one edge per interlink that
+  //      crosses two DIFFERENT feeders (an interlink within a single feeder doesn't affect band
+  //      order and is ignored here), weighted by how many interlinks connect that pair.
+  //   2. Walk it as a single chain, starting from the first feeder in the existing list ("take any
+  //      feeder" -- the starting point doesn't matter, so the simplest deterministic choice is used).
+  //   3. At each step, extend the chain onto an interlinked, not-yet-placed feeder. When there are
+  //      several candidates, prefer the one with the FEWEST other remaining interlinked connections:
+  //      placing that near-"leaf" neighbor immediately keeps its one tie short, and leaves feeders
+  //      with many ties (hubs) unplaced until more of their neighbors already have a place nearby --
+  //      so a hub's several ties end up clustered together instead of spread across the whole stack.
+  //      Ties in that count are broken by the strength of the direct connection to the feeder just
+  //      placed, then by original list order (keeps the whole thing deterministic).
+  //   4. Whenever the chain runs out of interlinked candidates (a disconnected part of the network),
+  //      restart from whichever remaining feeder has the most interlinked connections left -- a
+  //      well-connected feeder benefits most from a fresh position where its neighbors can still
+  //      cluster around it.
+  function computeFeederOrder(){
+    const feeders = state.feeders;
+    if(feeders.length <= 2) return feeders; // nothing meaningful to reorder with 0-2 feeders
+
+    const feederIndexOf = new Map(feeders.map((f,i)=>[f.id, i]));
+    const adj = new Map(feeders.map(f=>[f.id, new Map()])); // feederId -> Map(otherFeederId -> tie count)
+    for(const link of state.interlinks){
+      const a = nodeById(link.nodeAId), b = nodeById(link.nodeBId);
+      if(!a || !b || a.feederId === b.feederId) continue; // ignore same-feeder ties and dangling refs
+      if(!adj.has(a.feederId) || !adj.has(b.feederId)) continue;
+      adj.get(a.feederId).set(b.feederId, (adj.get(a.feederId).get(b.feederId) || 0) + 1);
+      adj.get(b.feederId).set(a.feederId, (adj.get(b.feederId).get(a.feederId) || 0) + 1);
+    }
+    const degreeAmongUnplaced = (fid, unplaced) => {
+      let total = 0;
+      for(const [otherId, count] of adj.get(fid)) if(unplaced.has(otherId)) total += count;
+      return total;
+    };
+    const byOriginalOrder = (ids) => ids.sort((x,y) => feederIndexOf.get(x) - feederIndexOf.get(y));
+
+    const unplaced = new Set(feeders.map(f=>f.id));
+    const order = [];
+    let current = feeders[0].id;
+    unplaced.delete(current);
+    order.push(current);
+
+    while(unplaced.size){
+      const neighbors = byOriginalOrder([...adj.get(current).keys()].filter(id=>unplaced.has(id)));
+      let next;
+      if(neighbors.length){
+        next = neighbors.reduce((best, id) => {
+          const idDeg = degreeAmongUnplaced(id, unplaced), bestDeg = degreeAmongUnplaced(best, unplaced);
+          if(idDeg !== bestDeg) return idDeg < bestDeg ? id : best; // fewest other remaining ties first
+          const idDirect = adj.get(current).get(id) || 0, bestDirect = adj.get(current).get(best) || 0;
+          if(idDirect !== bestDirect) return idDirect > bestDirect ? id : best; // strongest direct tie wins
+          return feederIndexOf.get(id) < feederIndexOf.get(best) ? id : best;
+        });
+      } else {
+        // dead end -- restart from the best-connected remaining feeder so its ties can still cluster
+        const remaining = byOriginalOrder([...unplaced]);
+        next = remaining.reduce((best, id) => {
+          const idDeg = degreeAmongUnplaced(id, unplaced), bestDeg = degreeAmongUnplaced(best, unplaced);
+          return idDeg > bestDeg ? id : best;
+        });
+      }
+      unplaced.delete(next);
+      order.push(next);
+      current = next;
+    }
+
+    return order.map(id => feeders.find(f=>f.id===id));
+  }
+
   function computeLayout(){
     const positions = {};
     let globalOffsetY = MARGIN_T;
-    for(const feeder of state.feeders){
+    for(const feeder of computeFeederOrder()){
       const leafCounter = {count:0};
       const local = {};
       layoutNode(feeder.sourceId, 0, leafCounter, local);
