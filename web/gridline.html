@@ -316,7 +316,7 @@
   #zoom-controls button:hover{filter:brightness(1.2);}
   #zoom-controls button.active{background:var(--teal);color:var(--panel);border-color:transparent;}
 
-  /* ---------- feeder auto-rotation badge (Ctrl+R presentation mode) ---------- */
+  /* ---------- feeder auto-rotation badge (Ctrl+W presentation mode) ---------- */
   /* position:fixed, kept centered over the top of #canvas-wrap by JS (positionFeederRotationBadge),
      same pinning approach as #zoom-controls above. */
   #feeder-rotation-badge{
@@ -1961,7 +1961,7 @@
   // every list/dropdown built from it (sidebar feeder list, line/interlink/transformer selects,
   // exports), is left untouched. It's also fully deterministic given the same feeders/interlinks,
   // so the stacking order stays put across every re-render (a switch toggle, a realtime broadcast,
-  // Ctrl+R rotation, etc.) and only reshuffles when the topology itself actually changes.
+  // Ctrl+W rotation, etc.) and only reshuffles when the topology itself actually changes.
   //
   // This is a greedy graph-traversal heuristic, not an exact minimum-crossing solution (that's an
   // NP-hard arrangement problem) -- but it's cheap and works well in practice:
@@ -2266,7 +2266,7 @@
     }
 
     // ring interlinks (dashed, drawn between two existing nodes, possibly across feeders) —
-    // suppressed during feeder-rotation presentation mode (Ctrl+R): a wallboard view of one feeder
+    // suppressed during feeder-rotation presentation mode (Ctrl+W): a wallboard view of one feeder
     // at a time reads as cluttered/tangled once a tie line reaches off toward another feeder that
     // isn't even on screen, so every interlink is drawn fully transparent (opacity 0) rather than
     // skipped outright while rotation is active — same position, same click target, same
@@ -3829,12 +3829,12 @@
     setSidebarCollapsed(!document.getElementById('app').classList.contains('sidebar-collapsed'));
   });
 
-  // ---------- feeder auto-rotation presentation mode (Ctrl+R while in full screen) ----------
+  // ---------- feeder auto-rotation presentation mode (Ctrl+W while in full screen) ----------
   // A kiosk/wallboard mode for a control-center display: while in full screen (sidebar hidden),
-  // Ctrl+R additionally hides the Realtime View/Simulator tab bar — reclaiming that strip for the
+  // Ctrl+W additionally hides the Realtime View/Simulator tab bar — reclaiming that strip for the
   // diagram too — and starts cycling through every feeder, one at a time, zoomed to fill the
   // canvas, 10 seconds each, looping forever. Esc cancels it and restores exactly how the window
-  // looked before Ctrl+R was pressed (sidebar state, tab bar, zoom level, and scroll position).
+  // looked before Ctrl+W was pressed (sidebar state, tab bar, zoom level, and scroll position).
   const FEEDER_ROTATION_INTERVAL_MS = 10000;
   let feederRotationTimer = null;
   let feederRotationIndex = 0;
@@ -3900,8 +3900,11 @@
         behavior: 'smooth',
       });
     }
+    // Just the feeder name — no "next feeder in 10s"/"Esc to exit" hint text, per the ask to keep
+    // this a clean, minimal label rather than an instructional strip (positionFeederRotationBadge
+    // already pins it to the top-middle of the canvas).
     const badge = document.getElementById('feeder-rotation-badge');
-    badge.innerHTML = `▶ <b>${escapeAttr(feeder.name)}</b> &nbsp;·&nbsp; next feeder in 10s &nbsp;·&nbsp; Esc to exit`;
+    badge.innerHTML = `<b>${escapeAttr(feeder.name)}</b>`;
   }
 
   function startFeederRotation(){
@@ -3971,9 +3974,9 @@
 
   document.addEventListener('keydown', (e)=>{
     const typingInField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
-    if(e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'r' || e.key === 'R')){
-      // Only takes over Ctrl+R (normally "reload page") when already in full screen — otherwise
-      // leave the browser's default refresh alone.
+    if(e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'w' || e.key === 'W')){
+      // Only takes over Ctrl+W (normally "close tab") when already in full screen — otherwise
+      // leave the browser's default behavior alone.
       if(typingInField || !document.getElementById('app').classList.contains('sidebar-collapsed')) return;
       e.preventDefault();
       startFeederRotation();
