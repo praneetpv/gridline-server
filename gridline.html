@@ -2882,13 +2882,16 @@
     document.getElementById('stat-tx').textContent = state.transformers.length;
     const kva = state.transformers.reduce((a,t)=>a+(Number(t.capacity)||0),0);
     document.getElementById('stat-kva').textContent = kva.toLocaleString();
-    // Simple sum of every R/Y/B phase amp reading entered across all transformers (whatever's
-    // been captured for the day) — not a per-phase breakdown, just one running total.
+    // Total load (A): each transformer only ever stores ONE reading per phase (the edit modal
+    // overwrites loadR/loadY/loadB in place, there's no history), so "current" and "last known" are
+    // the same value — there is nothing to filter by date here. Every transformer counts, whether
+    // its reading was captured just now or weeks ago; one that's never had a reading entered for a
+    // given phase contributes 0 for that phase rather than being skipped or throwing the total off.
     const totalAmps = state.transformers.reduce((sum, t) => {
-      const r = typeof t.loadR === 'number' ? t.loadR : 0;
-      const y = typeof t.loadY === 'number' ? t.loadY : 0;
-      const b = typeof t.loadB === 'number' ? t.loadB : 0;
-      return sum + r + y + b;
+      const lastKnownR = typeof t.loadR === 'number' ? t.loadR : 0;
+      const lastKnownY = typeof t.loadY === 'number' ? t.loadY : 0;
+      const lastKnownB = typeof t.loadB === 'number' ? t.loadB : 0;
+      return sum + lastKnownR + lastKnownY + lastKnownB;
     }, 0);
     const ampsEl = document.getElementById('stat-amps');
     ampsEl.textContent = totalAmps.toLocaleString();
