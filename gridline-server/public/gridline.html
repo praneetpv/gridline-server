@@ -467,7 +467,6 @@
 
     <div id="view-tab-spacer"></div>
     <button class="btn-ghost" id="audit-log-btn" style="display:none;" title="View recent switching/entity activity on this network">📋 Activity Log</button>
-    <button class="btn-ghost" id="backend-logout-btn" style="display:none;" title="Sign out of the GRIDLINE backend">⎋ Log out</button>
     <button class="btn-ghost" id="theme-toggle-btn" title="Switch to a light grayish background">☀️ Light mode</button>
     <button class="btn-ghost" id="toggle-sidebar-btn" title="Hide the left panel for a full-screen diagram">⛶ Full Screen</button>
     <span id="import-status" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:4px;"></span>
@@ -475,6 +474,9 @@
     <button class="btn-primary" style="width:auto;margin-top:0;padding:8px 14px;" id="save-excel-btn">💾 Save</button>
     <button class="btn-ghost" id="export-excel-btn">⇩ Export Excel</button>
     <button class="btn-ghost" id="print-btn" title="Print the network diagram, or choose 'Save as PDF' in the print dialog">🖨️ Print</button>
+    <!-- Kept last, at the very right end of the toolbar -- a sign-out action reads better as the
+         final item in the row rather than sitting up front before every other action button. -->
+    <button class="btn-ghost" id="backend-logout-btn" style="display:none;" title="Sign out of the GRIDLINE backend">⎋ Log out</button>
     <input type="file" id="import-excel-input" accept=".xlsx,.xls" style="display:none;">
   </div>
 
