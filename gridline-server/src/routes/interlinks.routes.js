@@ -40,7 +40,7 @@ router.post('/', canManageEntities, async (req, res) => {
   const interlink = rows[0];
 
   const audit = await recordChange(pool, {
-    entityType: 'interlink', entityId: interlink.id, action: 'create',
+    entityType: 'interlink', entityId: interlink.id, action: 'create', entityLabel: interlink.name,
     newValue: interlink, performedBy: req.user.id, performedVia: via(req),
   });
   broadcastEvent(toEventPayload(audit, interlink, req.user));
@@ -72,7 +72,7 @@ router.patch('/:id', async (req, res) => {
     const audit = await recordChange(pool, {
       entityType: 'interlink', entityId: after.id, action: 'update', fieldChanged: changedField,
       oldValue: before.rows[0] ? before.rows[0][changedField] : undefined,
-      newValue: after[changedField],
+      newValue: after[changedField], entityLabel: after.name,
       performedBy: req.user.id, performedVia: via(req),
     });
     broadcastEvent(toEventPayload(audit, after, req.user));
@@ -93,7 +93,7 @@ router.delete('/:id', canManageEntities, async (req, res) => {
 
   const audit = await recordChange(pool, {
     entityType: 'interlink', entityId: req.params.id, action: 'delete', oldValue: rows[0],
-    performedBy: req.user.id, performedVia: via(req),
+    entityLabel: rows[0].name, performedBy: req.user.id, performedVia: via(req),
   });
   broadcastEvent(toEventPayload(audit, null, req.user));
   res.status(204).end();

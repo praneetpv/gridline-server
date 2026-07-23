@@ -65,22 +65,29 @@ async function deleteCollectedSubtree(client, { nodeIdArr, lineIdArr }, userId, 
   const interlinkIdArr = interlinkRes.rows.map((r) => r.id);
 
   // Delete children before parents to respect FKs even though most are already ON DELETE CASCADE
-  // — being explicit here means the audit trail records each entity individually.
+  // — being explicit here means the audit trail records each entity individually. `returning`
+  // captures each row's name/label as it's deleted, so the audit entry stays meaningful even though
+  // the entity itself is gone by the time anyone reads the log.
+  const labelByKey = {};
   if (transformerIdArr.length) {
     const { sql, params } = inList('id', transformerIdArr, 1);
-    await client.query(`delete from transformers where ${sql}`, params);
+    const { rows } = await client.query(`delete from transformers where ${sql} returning id, name`, params);
+    for (const r of rows) labelByKey[`transformer:${r.id}`] = r.name;
   }
   if (interlinkIdArr.length) {
     const { sql, params } = inList('id', interlinkIdArr, 1);
-    await client.query(`delete from interlinks where ${sql}`, params);
+    const { rows } = await client.query(`delete from interlinks where ${sql} returning id, name`, params);
+    for (const r of rows) labelByKey[`interlink:${r.id}`] = r.name;
   }
   if (lineIdArr.length) {
     const { sql, params } = inList('id', lineIdArr, 1);
-    await client.query(`delete from lines where ${sql}`, params);
+    const { rows } = await client.query(`delete from lines where ${sql} returning id, name`, params);
+    for (const r of rows) labelByKey[`line:${r.id}`] = r.name;
   }
   {
     const { sql, params } = inList('id', nodeIdArr, 1);
-    await client.query(`delete from nodes where ${sql}`, params);
+    const { rows } = await client.query(`delete from nodes where ${sql} returning id, label`, params);
+    for (const r of rows) labelByKey[`node:${r.id}`] = r.label;
   }
 
   const auditRows = [
@@ -91,9 +98,9 @@ async function deleteCollectedSubtree(client, { nodeIdArr, lineIdArr }, userId, 
   ];
   for (const [entityType, entityId] of auditRows) {
     await client.query(
-      `insert into audit_log (entity_type, entity_id, action, performed_by, performed_via)
-       values ($1, $2, 'delete', $3, $4)`,
-      [entityType, entityId, userId, via]
+      `insert into audit_log (entity_type, entity_id, action, entity_label, performed_by, performed_via)
+       values ($1, $2, 'delete', $3, $4, $5)`,
+      [entityType, entityId, labelByKey[`${entityType}:${entityId}`] || null, userId, via]
     );
   }
 
@@ -143,4 +150,4 @@ async function deleteNodeCascade(client, nodeId, userId, via) {
   return deleteCollectedSubtree(client, { nodeIdArr: [...nodeIds], lineIdArr: [...lineIds] }, userId, via);
 }
 
-module.exports = { collectSubtree, deleteLineCascade, deleteNodeCascade };
+module.exports = { collectSubtree, deleteLineCascade, deleteNodeCascade, inList };

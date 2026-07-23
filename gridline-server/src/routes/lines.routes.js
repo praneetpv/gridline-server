@@ -33,7 +33,7 @@ router.post('/', canManageEntities, async (req, res) => {
   const line = rows[0];
 
   const audit = await recordChange(pool, {
-    entityType: 'line', entityId: line.id, action: 'create',
+    entityType: 'line', entityId: line.id, action: 'create', entityLabel: line.name,
     newValue: line, performedBy: req.user.id, performedVia: via(req),
   });
   broadcastEvent(toEventPayload(audit, line, req.user));
@@ -56,7 +56,7 @@ router.patch('/:id', async (req, res) => {
     const audit = await recordChange(pool, {
       entityType: 'line', entityId: after.id, action: 'update', fieldChanged: changedField,
       oldValue: before.rows[0] ? before.rows[0][changedField] : undefined,
-      newValue: after[changedField],
+      newValue: after[changedField], entityLabel: after.name,
       performedBy: req.user.id, performedVia: via(req),
     });
     broadcastEvent(toEventPayload(audit, after, req.user));

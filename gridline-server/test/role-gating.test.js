@@ -27,10 +27,14 @@ async function main() {
 
   const { pool } = require('../src/db');
 
-  const schemaSql = fs.readFileSync(path.join(__dirname, '../src/migrations/001_init.sql'), 'utf8')
-    .replace(/create extension if not exists pgcrypto;/, '');
-  await pool.query(schemaSql);
-  console.log('[role-gating] schema applied to in-memory Postgres');
+  const migrationsDir = path.join(__dirname, '../src/migrations');
+  const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+  for (const file of migrationFiles) {
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
+      .replace(/create extension if not exists pgcrypto;/, '');
+    await pool.query(sql);
+  }
+  console.log('[role-gating] schema applied to in-memory Postgres:', migrationFiles.join(', '));
 
   async function seedUser(name, email, role) {
     const passwordHash = bcrypt.hashSync('testpass123', 4);

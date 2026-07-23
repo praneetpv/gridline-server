@@ -39,7 +39,7 @@ router.post('/', canManageEntities, async (req, res) => {
   const tx = rows[0];
 
   const audit = await recordChange(pool, {
-    entityType: 'transformer', entityId: tx.id, action: 'create',
+    entityType: 'transformer', entityId: tx.id, action: 'create', entityLabel: tx.name,
     newValue: tx, performedBy: req.user.id, performedVia: via(req),
   });
   broadcastEvent(toEventPayload(audit, tx, req.user));
@@ -77,7 +77,7 @@ router.patch('/:id', async (req, res) => {
   const after = rows[0];
 
   const audit = await recordChange(pool, {
-    entityType: 'transformer', entityId: after.id, action: 'update',
+    entityType: 'transformer', entityId: after.id, action: 'update', entityLabel: after.name,
     oldValue: before.rows[0], newValue: after, performedBy: req.user.id, performedVia: via(req),
   });
   broadcastEvent(toEventPayload(audit, after, req.user));
@@ -90,7 +90,7 @@ router.delete('/:id', canManageEntities, async (req, res) => {
 
   const audit = await recordChange(pool, {
     entityType: 'transformer', entityId: req.params.id, action: 'delete', oldValue: rows[0],
-    performedBy: req.user.id, performedVia: via(req),
+    entityLabel: rows[0].name, performedBy: req.user.id, performedVia: via(req),
   });
   broadcastEvent(toEventPayload(audit, null, req.user));
   res.status(204).end();

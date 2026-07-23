@@ -30,11 +30,15 @@ async function main() {
 
   const { pool } = require('../src/db');
 
-  // --- run the real migration against pg-mem ---
-  const schemaSql = fs.readFileSync(path.join(__dirname, '../src/migrations/001_init.sql'), 'utf8')
-    .replace(/create extension if not exists pgcrypto;/, ''); // pg-mem has no extension system; gen_random_uuid is registered above instead
-  await pool.query(schemaSql);
-  console.log('[smoke] schema applied to in-memory Postgres');
+  // --- run every real migration against pg-mem, in order (same as src/migrate.js) ---
+  const migrationsDir = path.join(__dirname, '../src/migrations');
+  const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+  for (const file of migrationFiles) {
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
+      .replace(/create extension if not exists pgcrypto;/, ''); // pg-mem has no extension system; gen_random_uuid is registered above instead
+    await pool.query(sql);
+  }
+  console.log('[smoke] schema applied to in-memory Postgres:', migrationFiles.join(', '));
 
   // --- seed one admin user ---
   const passwordHash = bcrypt.hashSync('testpass123', 4);

@@ -3,13 +3,13 @@
 // live event are deliberately the same object, since a client subscribing "live" is really just
 // tailing the audit log in real time.
 
-async function recordChange(client, { entityType, entityId, action, fieldChanged, oldValue, newValue, performedBy, performedVia }) {
+async function recordChange(client, { entityType, entityId, action, fieldChanged, oldValue, newValue, entityLabel, performedBy, performedVia }) {
   const { rows } = await client.query(
-    `insert into audit_log (entity_type, entity_id, action, field_changed, old_value, new_value, performed_by, performed_via)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+    `insert into audit_log (entity_type, entity_id, action, field_changed, old_value, new_value, entity_label, performed_by, performed_via)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      returning *`,
     [entityType, entityId, action, fieldChanged || null, oldValue != null ? JSON.stringify(oldValue) : null,
-      newValue != null ? JSON.stringify(newValue) : null, performedBy, performedVia]
+      newValue != null ? JSON.stringify(newValue) : null, entityLabel || null, performedBy, performedVia]
   );
   return rows[0];
 }
@@ -20,6 +20,7 @@ function toEventPayload(auditRow, entity, user) {
   return {
     type: `${auditRow.entity_type}.${typeSuffix}`,
     entityId: auditRow.entity_id,
+    entityLabel: auditRow.entity_label || undefined,
     field: auditRow.field_changed || undefined,
     oldValue: auditRow.old_value || undefined,
     newValue: auditRow.new_value || undefined,

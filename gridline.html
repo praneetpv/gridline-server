@@ -267,6 +267,26 @@
   #feeder-modal .modal-actions button{flex:1;}
   #feeder-modal .btn-secondary{background:var(--panel-2);color:var(--text);border:1px solid var(--border);}
 
+  /* ---------- activity log modal ---------- */
+  #audit-modal-backdrop{
+    position:fixed;inset:0;background:rgba(6,9,11,.6);z-index:50;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #audit-modal{
+    width:640px;max-width:92vw;max-height:82vh;overflow-y:auto;background:var(--panel);
+    border:1px solid var(--border);border-radius:10px;padding:20px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);position:relative;
+  }
+  #audit-modal h2{margin:0 0 4px;font-size:15px;font-family:var(--sans);font-weight:600;}
+  #audit-modal .modal-sub{color:var(--muted);font-size:11px;font-family:var(--mono);margin-bottom:14px;}
+  #audit-modal .close{position:absolute;top:14px;right:16px;cursor:pointer;color:var(--muted);font-size:16px;}
+  #audit-log-list{font-family:var(--mono);font-size:12px;line-height:1.6;}
+  .audit-entry{padding:7px 0;border-bottom:1px solid var(--border);}
+  .audit-entry:last-child{border-bottom:none;}
+  .audit-entry .audit-time{color:var(--muted);margin-right:6px;}
+  .audit-entry .audit-user{color:var(--teal);}
+  .audit-empty{color:var(--muted);padding:24px 0;text-align:center;}
+
   /* ---------- mobile menu button + sidebar backdrop (hidden on desktop) ---------- */
   #mobile-menu-btn{
     display:none;align-items:center;justify-content:center;gap:0;
@@ -376,7 +396,7 @@
       --feeder-off:#5B6670; --disabled:#8993A0; --panel-translucent:#FFFFFF; --grid-dot:#FFFFFF;
     }
     #mobile-menu-btn, #view-tabs, #sidebar, #sidebar-backdrop, #zoom-controls, #inspector,
-    #feeder-modal-backdrop, #drawer, #entity-search-results{ display:none !important; }
+    #feeder-modal-backdrop, #audit-modal-backdrop, #drawer, #entity-search-results{ display:none !important; }
 
     html, body{ background:#fff !important; height:auto !important; }
     #app, #body, #main{ display:block !important; height:auto !important; overflow:visible !important; }
@@ -433,6 +453,7 @@
     </div>
 
     <div id="view-tab-spacer"></div>
+    <button class="btn-ghost" id="audit-log-btn" style="display:none;" title="View recent switching/entity activity on this network">📋 Activity Log</button>
     <button class="btn-ghost" id="backend-logout-btn" style="display:none;" title="Sign out of the GRIDLINE backend">⎋ Log out</button>
     <button class="btn-ghost" id="theme-toggle-btn" title="Switch to a light grayish background">☀️ Light mode</button>
     <button class="btn-ghost" id="toggle-sidebar-btn" title="Hide the left panel for a full-screen diagram">⛶ Full Screen</button>
@@ -609,6 +630,15 @@
 
       <div id="feeder-modal-backdrop" style="display:none;">
         <div id="feeder-modal"></div>
+      </div>
+
+      <div id="audit-modal-backdrop" style="display:none;">
+        <div id="audit-modal">
+          <span class="close" id="audit-modal-close">✕</span>
+          <h2>Activity Log</h2>
+          <p class="modal-sub">Every switch operation, load reading, fault entry, and topology change on this network — last 14 days. The complete history is retained in the database for audit purposes.</p>
+          <div id="audit-log-list"><div class="audit-empty">Loading…</div></div>
+        </div>
       </div>
 
       <div id="drawer">
@@ -840,6 +870,12 @@
   // ---- applying a live broadcast (see gridline-server src/realtime/socket.js) to local state ----
   function applyServerEvent(evt){
     if(!state || activeView !== 'realtime' || !evt || !evt.type) return;
+    // Every broadcast is also an audit-worthy event — if the activity log modal happens to be open
+    // right now, refresh it from the server so a second user watching it sees new entries live
+    // instead of only after they reopen the modal. (A refetch rather than a client-side splice keeps
+    // this simple and correct — cascade deletes in particular affect many rows with per-entity
+    // labels that are only fully accurate coming back from the database.)
+    if(auditModalOpen) loadAndRenderAuditLog();
     const entityType = evt.type.split('.')[0];
     const isDelete = evt.type.endsWith('.deleted');
     const isCreate = evt.type.endsWith('.created');
@@ -945,9 +981,15 @@
   function updateBackendStatusIndicator(){
     const el = document.getElementById('backend-status');
     const logoutBtn = document.getElementById('backend-logout-btn');
+    const auditBtn = document.getElementById('audit-log-btn');
     if(!el) return;
     const onRealtime = activeView === 'realtime';
     if(logoutBtn) logoutBtn.style.display = onRealtime ? '' : 'none';
+    // The activity log reads from the backend's audit_log table, so it only makes sense — and is
+    // only reachable — from the Realtime view. The Simulator is a local, ephemeral what-if sandbox
+    // with nothing to audit. Available to every role, including field_staff: seeing what's already
+    // been done to the network is useful to everyone, it's not an add/delete capability.
+    if(auditBtn) auditBtn.style.display = onRealtime ? '' : 'none';
     if(!onRealtime){ el.style.display = 'none'; return; }
     el.style.display = 'inline-flex';
     el.textContent = backend.connected ? '● Live' : '○ Reconnecting…';
@@ -956,6 +998,97 @@
       ? 'Connected to the GRIDLINE backend — changes sync in real time.'
       : 'Not connected to the GRIDLINE backend — trying to reconnect.';
   }
+
+  // ---------- activity log (audit trail) ----------
+  // Formats a Postgres timestamptz (ISO string) as "DD-MM-YYYY HH:MM" in the viewer's local time —
+  // matches the format used throughout the rest of the app's date displays.
+  function formatAuditTimestamp(iso){
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return '';
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // The transformer edit modal saves several fields (load R/Y/B, fault date/reason, name, capacity,
+  // pole) in one PATCH, so unlike a simple state toggle there's no single "field changed" to point
+  // to — the audit row instead carries the full before/after row as JSON. Diff the parts a
+  // distribution company actually cares about into a short, readable summary.
+  function describeTransformerChange(oldV, newV){
+    if(!oldV || !newV) return 'updated';
+    const bits = [];
+    if(['load_r','load_y','load_b'].some(k => String(oldV[k] ?? '') !== String(newV[k] ?? ''))){
+      bits.push('load reading updated');
+    }
+    if(oldV.last_fault_reason !== newV.last_fault_reason || oldV.last_fault_date !== newV.last_fault_date){
+      if(newV.last_fault_reason || newV.last_fault_date){
+        bits.push(newV.last_fault_reason ? `fault logged: ${newV.last_fault_reason}` : 'fault date logged');
+      }
+    }
+    if(['name','capacity_kva','pole_name'].some(k => String(oldV[k] ?? '') !== String(newV[k] ?? ''))){
+      bits.push('details updated');
+    }
+    return bits.length ? bits.join(', ') : 'updated';
+  }
+
+  // Turns one audit_log row (as returned by GET /api/audit — see gridline-server routes/audit.routes.js)
+  // into the "<entity> <what happened>" half of a line like "Medical College AB OPEN by ksebengineer".
+  function describeAuditActivity(row){
+    const label = row.entity_label || `(unnamed ${row.entity_type})`;
+    if(row.action === 'create') return `${label} added`;
+    if(row.action === 'delete') return `${label} removed`;
+    const field = row.field_changed;
+    const newVal = row.new_value;
+    if(row.entity_type === 'node' && field === 'state') return `${label} ${String(newVal).toUpperCase()}`;
+    if(row.entity_type === 'line' && field === 'breaker_state') return `${label} ${String(newVal).toUpperCase()}`;
+    if(row.entity_type === 'feeder' && field === 'state') return `${label} feeder ${String(newVal).toUpperCase()}`;
+    if(row.entity_type === 'interlink' && field === 'switch_state') return `${label} interlink ${newVal === 'NC' ? 'CLOSED' : 'OPEN'}`;
+    if(field === 'label' || field === 'name') return `${label} renamed`;
+    if(row.entity_type === 'transformer' && !field) return `${label} ${describeTransformerChange(row.old_value, row.new_value)}`;
+    return `${label} updated`;
+  }
+
+  function formatAuditLine(row){
+    const who = row.performed_by_name || 'unknown user';
+    return `${formatAuditTimestamp(row.performed_at)} ${describeAuditActivity(row)} by ${who}`;
+  }
+
+  let auditModalOpen = false;
+
+  function renderAuditLog(rows){
+    const list = document.getElementById('audit-log-list');
+    if(!rows.length){
+      list.innerHTML = `<div class="audit-empty">No activity recorded in the last 14 days.</div>`;
+      return;
+    }
+    list.innerHTML = rows.map(row => `<div class="audit-entry">${escapeAttr(formatAuditLine(row))}</div>`).join('');
+  }
+
+  async function loadAndRenderAuditLog(){
+    const list = document.getElementById('audit-log-list');
+    try{
+      const since = new Date();
+      since.setDate(since.getDate() - 14);
+      const rows = await backend.get(`/api/audit?from=${encodeURIComponent(since.toISOString())}&limit=2000`);
+      renderAuditLog(rows);
+    }catch(e){
+      list.innerHTML = `<div class="audit-empty">Couldn't load the activity log (${escapeAttr(e.message || 'request failed')}).</div>`;
+    }
+  }
+
+  function closeAuditModal(){
+    document.getElementById('audit-modal-backdrop').style.display = 'none';
+    auditModalOpen = false;
+  }
+
+  document.getElementById('audit-log-btn').addEventListener('click', ()=>{
+    document.getElementById('audit-modal-backdrop').style.display = 'flex';
+    auditModalOpen = true;
+    loadAndRenderAuditLog();
+  });
+  document.getElementById('audit-modal-close').addEventListener('click', closeAuditModal);
+  document.getElementById('audit-modal-backdrop').addEventListener('click', (e)=>{
+    if(e.target.id === 'audit-modal-backdrop') closeAuditModal();
+  });
 
   function connectRealtimeSocket(){
     if(backend.socket) return;
