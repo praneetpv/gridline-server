@@ -890,6 +890,16 @@
     // this simple and correct — cascade deletes in particular affect many rows with per-entity
     // labels that are only fully accurate coming back from the database.)
     if(auditModalOpen) loadAndRenderAuditLog();
+
+    // Another admin just published an imported network via Save (POST /api/network/replace) —
+    // every existing feeder/node/line/transformer/interlink is gone and replaced wholesale, so
+    // there's no per-entity diff to apply here. Simplest and safest is the same "brief drop, just
+    // re-fetch" wholesale resync already used on socket reconnect.
+    if(evt.type === 'network.replaced'){
+      loadRealtimeFromServer().then(s=>{ state = s; renderAll(); }).catch(e=>console.error('resync after network replace failed', e));
+      return;
+    }
+
     const entityType = evt.type.split('.')[0];
     const isDelete = evt.type.endsWith('.deleted');
     const isCreate = evt.type.endsWith('.created');
@@ -1048,6 +1058,16 @@
   // into the "<entity> <what happened>" half of a line like "Medical College AB OPEN by ksebengineer".
   function describeAuditActivity(row){
     const label = row.entity_label || `(unnamed ${row.entity_type})`;
+    // One consolidated row for a whole "Import Excel, then Save" network replace in Realtime view
+    // (see gridline-server routes/network.routes.js) — reuses entity_type='feeder' (no schema
+    // change needed) with this distinctive field_changed sentinel rather than a one-off per-entity
+    // row for every feeder/node/line/transformer/interlink in the replaced network.
+    if(row.field_changed === '__network_replace__'){
+      const n = row.new_value || {};
+      const counts = ['feeders','nodes','lines','transformers','interlinks']
+        .map(k => `${n[k] != null ? n[k] : 0} ${k}`).join(', ');
+      return `${label} network replaced (${counts})`;
+    }
     if(row.action === 'create') return `${label} added`;
     if(row.action === 'delete') return `${label} removed`;
     const field = row.field_changed;
@@ -2624,9 +2644,12 @@
   // Role-gated chrome: admin gets the full toolbar; any other logged-in role gets a simplified one
   // (no Import/Export Excel, no Print, no Simulator, legend starts collapsed). field_staff
   // additionally loses every add/delete-entity control — they operate existing switches in the
-  // field, they don't build or tear down the topology. This is purely a UI convenience; the backend
-  // isn't gated by role beyond what already exists, so treat this as a workflow simplification, not
-  // a security boundary.
+  // field, they don't build or tear down the topology. This is purely a UI convenience for most of
+  // the buttons below; the backend isn't gated by role beyond what already exists there, so treat
+  // most of this as a workflow simplification, not a security boundary. The one exception is Save
+  // in Realtime view (see saveCurrentViewToExcel/showReplaceNetworkWarning below): that action wipes
+  // and replaces the ENTIRE live network, and the server independently enforces admin-only on it
+  // (POST /api/network/replace) regardless of what this function shows or hides.
   function applyRoleUI(){
     const nonAdmin = isNonAdminRole();
     const fieldStaff = isFieldStaff();
@@ -2635,14 +2658,21 @@
     const exportBtn = document.getElementById('export-excel-btn');
     const printBtn = document.getElementById('print-btn');
     const simTab = document.getElementById('tab-simulator');
-    // Import Excel has no real function left in the Realtime view (the backend is the source of
-    // truth there) — hidden there for every role, including admin. It's still needed in the
-    // Simulator view (building/editing a what-if network from a workbook), so that path keeps the
-    // existing admin-only rule.
-    if(importBtn) importBtn.style.display = (activeView === 'realtime' || nonAdmin) ? 'none' : '';
+    const saveBtn = document.getElementById('save-excel-btn');
+    // Import Excel now has a real function in both views: Simulator (build/edit a what-if network
+    // from a workbook, as always) and Realtime (preview an imported network, then Save to publish it
+    // as the live network — see below). Both are gated the same as Export/Print/Simulator: visible
+    // for admin, hidden for everyone else.
+    if(importBtn) importBtn.style.display = nonAdmin ? 'none' : '';
     if(exportBtn) exportBtn.style.display = nonAdmin ? 'none' : '';
     if(printBtn) printBtn.style.display = nonAdmin ? 'none' : '';
     if(simTab) simTab.style.display = nonAdmin ? 'none' : '';
+    // Save: in Simulator this used to mean "keep writing to my working Excel file", which Export
+    // Excel already covers (a plain point-in-time download) — Simulator now only offers Export, per
+    // "after simulation we should only allow export in the same format as the imported file". In
+    // Realtime it means something else entirely (publish an imported network to the shared
+    // database), so it's admin-only there too.
+    if(saveBtn) saveBtn.style.display = (activeView === 'simulator' || nonAdmin) ? 'none' : '';
 
     ['add-feeder-form', 'section-add-line', 'section-add-interlink', 'section-add-linetx'].forEach(id=>{
       const el = document.getElementById(id);
@@ -4064,14 +4094,13 @@
     const file = e.target.files[0];
     e.target.value = ''; // allow re-selecting the same file later
     if(!file) return;
-    if(activeView === 'realtime'){
-      // The Realtime view's data now lives in the shared backend, not this browser's localStorage
-      // — importing a file here can't just replace local `state` the way it does for Simulator,
-      // since every other connected user (mobile and web) needs to see the same result. Bulk-seeding
-      // the server from an Excel file (creating each feeder/node/line/interlink/transformer via the
-      // API in dependency order) is real, separate scope from this integration — not yet built. For
-      // now, import into Simulator to review a file, or add entities to Realtime one at a time.
-      showImportStatus('Import isn\'t wired to the live backend yet — switch to Simulator to import a file, or add entities to Realtime one at a time.', true);
+    if(activeView === 'realtime' && currentRole() !== 'admin'){
+      // Belt-and-braces: the Import Excel button itself is already hidden in Realtime for
+      // non-admin (see applyRoleUI), and the actual destructive action — POST /api/network/replace
+      // — independently requires admin on the server regardless of what the client shows. This just
+      // keeps the input's own change handler consistent with that, in case it's ever reached another
+      // way (e.g. a stale page that hasn't re-applied role UI yet).
+      showImportStatus('Only an admin can import a network into Realtime view.', true);
       return;
     }
     try{
@@ -4120,10 +4149,21 @@
       }
       statesByView[activeView] = newState;
       state = newState;
+      if(activeView === 'realtime'){
+        // Preview only — this is purely local until Save is confirmed (see
+        // showReplaceNetworkWarning/saveCurrentViewToExcel below), since publishing it wipes and
+        // replaces the entire shared network for every connected user. Nothing is written to
+        // localStorage either (saveStateFor is Simulator's per-user-sandbox persistence; Realtime
+        // has never used it — see saveState()'s comment), so there's nothing to flush here.
+        newState.pendingReplace = true;
+        applyRoleUI();
+        renderAll();
+        showImportStatus(`Imported "${file.name}" into Real Time View (preview only) — click Save to publish it and replace the live network.`, false);
+        return;
+      }
       await saveStateFor(activeView, state);
       renderAll();
-      const viewLabel = activeView === 'realtime' ? 'Real Time View' : 'Simulator';
-      showImportStatus(`Imported "${file.name}" into ${viewLabel}.`, false);
+      showImportStatus(`Imported "${file.name}" into Simulator.`, false);
     }catch(err){
       console.error(err);
       showImportStatus('Could not read that file — check it matches the template format.', true);
@@ -4169,54 +4209,77 @@
     showImportStatus(`Exported ${filename} (${wb.SheetNames.length} sheets).`, false);
   });
 
-  // Save: writes the current view's state to its working Excel file at any time.
-  // On browsers that support the File System Access API (Chrome/Edge), the first
-  // Save prompts for a file location and every Save after that writes straight
-  // back to the same file with no dialog. Everywhere else it falls back to a
-  // plain download using the view's canonical filename.
-  const savedFileHandles = { realtime: null, simulator: null };
+  // Modal warning shown before Save publishes an imported network to the shared database — modeled
+  // on showSafetyFirstGate's same backdrop-reuse/Promise pattern. Resolves true only if the admin
+  // clicks "Replace Live Network"; false for Cancel or a backdrop click.
+  function showReplaceNetworkWarning(sectionLabel){
+    return new Promise((resolve)=>{
+      const backdrop = document.getElementById('feeder-modal-backdrop');
+      const modal = document.getElementById('feeder-modal');
+      const label = sectionLabel ? `"${sectionLabel}"` : 'this network';
+      modal.innerHTML = `
+        <h2>⚠ Replace Live Network</h2>
+        <p class="modal-sub">Saving will permanently delete the <b>entire current Real Time network</b> — every feeder, line, transformer and interlink — and replace it with the network you just imported for ${escapeAttr(label)}. This cannot be undone.</p>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="replace-network-cancel">Cancel</button>
+          <button class="btn-primary" style="margin-top:0;" id="replace-network-proceed">Replace Live Network</button>
+        </div>
+      `;
+      backdrop.style.display = 'flex';
+      let settled = false;
+      const finish = (result)=>{
+        if(settled) return;
+        settled = true;
+        backdrop.style.display = 'none';
+        backdrop.onclick = null;
+        resolve(result);
+      };
+      document.getElementById('replace-network-cancel').onclick = ()=>finish(false);
+      document.getElementById('replace-network-proceed').onclick = ()=>finish(true);
+      backdrop.onclick = (e)=>{ if(e.target === backdrop) finish(false); };
+    });
+  }
 
+  // Save only has one real job left, and only in Realtime view: publish a network that was just
+  // imported there (see the import-excel-input handler's pendingReplace flag) to the shared
+  // database, wiping and replacing whatever is currently live. Simulator no longer shows this button
+  // at all (see applyRoleUI) — "after simulation we should only allow export in the same format as
+  // the imported file", which Export Excel already does. Every other case here (no pending import,
+  // or somehow reached by a non-admin) is a harmless no-op with an explanatory message, matching how
+  // this button always behaved before this feature existed.
   async function saveCurrentViewToExcel(){
-    if(activeView === 'realtime'){
-      // Every Realtime mutation (toggle, add, delete) already writes straight to the shared
-      // backend/database the instant it happens — there's no local edit buffer here to flush to a
-      // file the way Simulator has. Writing an Excel file on "Save" would just be a stale, redundant
-      // snapshot, so this is a no-op with an explanatory message instead. Export Excel still works
-      // for Realtime if you want an actual point-in-time backup file.
-      showImportStatus('Realtime changes save automatically to the database as you make them — nothing to save here. Use Export Excel for a point-in-time backup file.', false);
+    if(activeView !== 'realtime'){
+      return; // button is hidden in Simulator; nothing to do if this is ever reached anyway
+    }
+    if(!state.pendingReplace){
+      showImportStatus('Realtime changes save automatically to the database as you make them — nothing to save here. Import Excel first if you want to replace the whole network.', false);
       return;
     }
-    const viewFilename = (activeView === 'realtime' ? 'RealtimeView' : 'SimulatorView') + '.xlsx';
-    const wb = buildWorkbookFromState(state);
-
-    if(window.showSaveFilePicker){
-      try{
-        let handle = savedFileHandles[activeView];
-        if(!handle){
-          handle = await window.showSaveFilePicker({
-            suggestedName: viewFilename,
-            types: [{
-              description: 'Excel Workbook',
-              accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
-            }]
-          });
-          savedFileHandles[activeView] = handle;
-        }
-        const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-        const writable = await handle.createWritable();
-        await writable.write(buf);
-        await writable.close();
-        showImportStatus(`Saved to ${handle.name}.`, false);
-      }catch(err){
-        if(err && err.name === 'AbortError') return; // user cancelled the save dialog
-        console.error(err);
-        savedFileHandles[activeView] = null;
-        XLSX.writeFile(wb, viewFilename);
-        showImportStatus(`Saved as download: ${viewFilename}.`, false);
-      }
-    } else {
-      XLSX.writeFile(wb, viewFilename);
-      showImportStatus(`Downloaded ${viewFilename}.`, false);
+    if(currentRole() !== 'admin'){
+      // Mirrors the same belt-and-braces check in the import handler — the button is already
+      // hidden for non-admin, and the server independently requires admin on the actual endpoint.
+      showImportStatus('Only an admin can publish an imported network to Realtime view.', true);
+      return;
+    }
+    const proceed = await showReplaceNetworkWarning(state.sectionName);
+    if(!proceed) return;
+    try{
+      const payload = {
+        sectionName: state.sectionName || '',
+        sectionDetails: state.sectionDetails || [],
+        feeders: state.feeders, nodes: state.nodes, lines: state.lines,
+        transformers: state.transformers, interlinks: state.interlinks,
+      };
+      const snapshot = await backend.post('/api/network/replace', payload);
+      const s = hydrateNetworkFromServer(snapshot);
+      statesByView.realtime = s;
+      state = s;
+      renderAll();
+      if(auditModalOpen) loadAndRenderAuditLog();
+      showImportStatus(`Saved — the live network now reflects the imported file (${state.feeders.length} feeders).`, false);
+    }catch(err){
+      console.error(err);
+      showImportStatus(`Could not save to the database: ${(err && err.message) || 'network error'}.`, true);
     }
   }
 

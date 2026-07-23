@@ -1,0 +1,16 @@
+-- Superseded before ever being deployed: the "Import Excel, then Save in Realtime" wholesale
+-- network-replace feature originally planned to log its one consolidated audit_log summary row
+-- under a new entity_type = 'network' value, which would have needed the entity_type check
+-- constraint here widened to allow it. That approach turned out to be fragile to test against
+-- (Postgres names an inline column CHECK constraint deterministically as
+-- "audit_log_entity_type_check", but pg-mem -- the in-memory Postgres stand-in the test suite runs
+-- against -- assigns its own internal constraint names instead, so a portable
+-- "drop constraint if exists <name>" couldn't reliably find and replace it there).
+--
+-- The feature instead reuses the already-allowed entity_type = 'feeder' for that one summary row,
+-- with a distinctive field_changed sentinel ('__network_replace__', see gridline-server's
+-- routes/network.routes.js and gridline.html's describeAuditActivity) to mark it as a network-wide
+-- event rather than an edit to one specific feeder. No schema change is needed after all, so this
+-- file is intentionally left as a harmless no-op (kept rather than removed so the migration
+-- filename sequence stays stable for anyone who already has 002_*.sql applied).
+select 1;
