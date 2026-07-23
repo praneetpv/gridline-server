@@ -316,6 +316,18 @@
   #zoom-controls button:hover{filter:brightness(1.2);}
   #zoom-controls button.active{background:var(--teal);color:var(--panel);border-color:transparent;}
 
+  /* ---------- feeder auto-rotation badge (Ctrl+R presentation mode) ---------- */
+  /* position:fixed, kept centered over the top of #canvas-wrap by JS (positionFeederRotationBadge),
+     same pinning approach as #zoom-controls above. */
+  #feeder-rotation-badge{
+    display:none;position:fixed;z-index:6;padding:8px 16px;border-radius:8px;
+    background:var(--panel-translucent);border:1px solid var(--border);backdrop-filter:blur(4px);
+    color:var(--text);font-family:var(--mono);font-size:12px;white-space:nowrap;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #feeder-rotation-badge.active{display:block;}
+  #feeder-rotation-badge b{color:var(--teal);}
+
   /* =====================================================================
      MOBILE / NARROW SCREEN LAYOUT
      ===================================================================== */
@@ -396,7 +408,8 @@
       --feeder-off:#5B6670; --disabled:#8993A0; --panel-translucent:#FFFFFF; --grid-dot:#FFFFFF;
     }
     #mobile-menu-btn, #view-tabs, #sidebar, #sidebar-backdrop, #zoom-controls, #inspector,
-    #feeder-modal-backdrop, #audit-modal-backdrop, #drawer, #entity-search-results{ display:none !important; }
+    #feeder-modal-backdrop, #audit-modal-backdrop, #drawer, #entity-search-results,
+    #feeder-rotation-badge{ display:none !important; }
 
     html, body{ background:#fff !important; height:auto !important; }
     #app, #body, #main{ display:block !important; height:auto !important; overflow:visible !important; }
@@ -620,6 +633,7 @@
         <div id="legend"></div>
         <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="inspector"></div>
+        <div id="feeder-rotation-badge"></div>
         <div id="zoom-controls">
           <button id="zoom-in" aria-label="Zoom in">+</button>
           <button id="zoom-out" aria-label="Zoom out">−</button>
@@ -3687,6 +3701,134 @@
   }
   toggleSidebarBtn.addEventListener('click', ()=>{
     setSidebarCollapsed(!document.getElementById('app').classList.contains('sidebar-collapsed'));
+  });
+
+  // ---------- feeder auto-rotation presentation mode (Ctrl+R while in full screen) ----------
+  // A kiosk/wallboard mode for a control-center display: while in full screen (sidebar hidden),
+  // Ctrl+R additionally hides the Realtime View/Simulator tab bar — reclaiming that strip for the
+  // diagram too — and starts cycling through every feeder, one at a time, zoomed to fill the
+  // canvas, 10 seconds each, looping forever. Esc cancels it and restores exactly how the window
+  // looked before Ctrl+R was pressed (sidebar state, tab bar, zoom level, and scroll position).
+  const FEEDER_ROTATION_INTERVAL_MS = 10000;
+  let feederRotationTimer = null;
+  let feederRotationIndex = 0;
+  let preRotationWindowState = null;
+
+  function isFeederRotationActive(){ return feederRotationTimer !== null; }
+
+  // Bounding box (in diagram-space/viewBox units, matching computeLayout's "positions" map) of
+  // every node belonging to one feeder — used to zoom/pan that feeder to fill the canvas, the same
+  // way entityTargetPosition resolves a single entity's point for the search feature above.
+  function computeFeederBounds(feeder, positions){
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let found = false;
+    for(const node of state.nodes){
+      if(node.feederId !== feeder.id) continue;
+      const p = positions[node.id];
+      if(!p) continue;
+      found = true;
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    if(!found) return null;
+    return {
+      width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY),
+      centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2,
+    };
+  }
+
+  function positionFeederRotationBadge(){
+    const badge = document.getElementById('feeder-rotation-badge');
+    const wrap = document.getElementById('canvas-wrap');
+    if(!badge || !wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    badge.style.left = Math.round(rect.left + rect.width / 2) + 'px';
+    badge.style.top = Math.round(rect.top + 14) + 'px';
+    badge.style.transform = 'translateX(-50%)';
+  }
+  window.addEventListener('resize', positionFeederRotationBadge);
+
+  // Zooms/pans to fit one feeder's whole subtree inside the visible canvas, same "world view +
+  // manual zoom" mechanism applyZoom/selectSearchResult already use — just computing the zoom level
+  // from the feeder's own bounding box instead of a fixed step or a single point.
+  function showFeederInFullView(feeder){
+    if(fitToScreen) setFitToScreen(false, { skipRender: true });
+    renderDiagram();
+    const { positions } = computeLayout();
+    const bounds = computeFeederBounds(feeder, positions);
+    const wrap = document.getElementById('canvas-wrap');
+    if(bounds){
+      const PAD = 120; // diagram-space padding so the feeder's edges aren't flush against the canvas edge
+      const fitZoomX = wrap.clientWidth / (bounds.width + PAD * 2);
+      const fitZoomY = wrap.clientHeight / (bounds.height + PAD * 2);
+      zoomLevel = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +Math.min(fitZoomX, fitZoomY).toFixed(2)));
+      renderDiagram();
+      wrap.scrollTo({
+        left: Math.max(0, bounds.centerX * zoomLevel - wrap.clientWidth / 2),
+        top: Math.max(0, bounds.centerY * zoomLevel - wrap.clientHeight / 2),
+        behavior: 'smooth',
+      });
+    }
+    const badge = document.getElementById('feeder-rotation-badge');
+    badge.innerHTML = `▶ <b>${escapeAttr(feeder.name)}</b> &nbsp;·&nbsp; next feeder in 10s &nbsp;·&nbsp; Esc to exit`;
+  }
+
+  function startFeederRotation(){
+    if(isFeederRotationActive() || !state.feeders.length) return;
+    const wrap = document.getElementById('canvas-wrap');
+    preRotationWindowState = {
+      sidebarCollapsed: document.getElementById('app').classList.contains('sidebar-collapsed'),
+      viewTabsHidden: document.getElementById('view-tabs').style.display === 'none',
+      zoomLevel, fitToScreen,
+      scrollLeft: wrap.scrollLeft, scrollTop: wrap.scrollTop,
+    };
+
+    setSidebarCollapsed(true);
+    document.getElementById('view-tabs').style.display = 'none';
+    positionZoomControls();
+    document.getElementById('feeder-rotation-badge').classList.add('active');
+    positionFeederRotationBadge();
+
+    feederRotationIndex = 0;
+    showFeederInFullView(state.feeders[feederRotationIndex]);
+    feederRotationTimer = setInterval(()=>{
+      feederRotationIndex = (feederRotationIndex + 1) % state.feeders.length;
+      showFeederInFullView(state.feeders[feederRotationIndex]);
+    }, FEEDER_ROTATION_INTERVAL_MS);
+  }
+
+  function stopFeederRotation(){
+    if(!isFeederRotationActive()) return;
+    clearInterval(feederRotationTimer);
+    feederRotationTimer = null;
+    document.getElementById('feeder-rotation-badge').classList.remove('active');
+
+    const prev = preRotationWindowState;
+    preRotationWindowState = null;
+    if(prev){
+      document.getElementById('view-tabs').style.display = prev.viewTabsHidden ? 'none' : '';
+      setSidebarCollapsed(prev.sidebarCollapsed);
+      zoomLevel = prev.zoomLevel;
+      setFitToScreen(prev.fitToScreen, { skipRender: true });
+      renderDiagram();
+      const wrap = document.getElementById('canvas-wrap');
+      wrap.scrollLeft = prev.scrollLeft;
+      wrap.scrollTop = prev.scrollTop;
+    }
+    positionZoomControls();
+  }
+
+  document.addEventListener('keydown', (e)=>{
+    const typingInField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+    if(e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'r' || e.key === 'R')){
+      // Only takes over Ctrl+R (normally "reload page") when already in full screen — otherwise
+      // leave the browser's default refresh alone.
+      if(typingInField || !document.getElementById('app').classList.contains('sidebar-collapsed')) return;
+      e.preventDefault();
+      startFeederRotation();
+    } else if(e.key === 'Escape'){
+      if(isFeederRotationActive()) stopFeederRotation();
+    }
   });
 
   document.getElementById('theme-toggle-btn').addEventListener('click', ()=>{
