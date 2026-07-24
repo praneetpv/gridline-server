@@ -11,7 +11,8 @@
     "smoke": "node test/smoke.test.js",
     "test:roles": "node test/role-gating.test.js",
     "test:audit": "node test/audit-log.test.js",
-    "test:network-replace": "node test/network-replace.test.js"
+    "test:network-replace": "node test/network-replace.test.js",
+    "create:kseb-user": "node scripts/create-kseb-user.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
