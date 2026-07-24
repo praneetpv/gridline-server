@@ -8,8 +8,10 @@ const { requireRole } = require('../auth/auth.middleware');
 const { inList } = require('../utils/cascade');
 
 // Creating or deleting a feeder changes the network topology itself — restricted to admin/
-// control_center. field_staff can still PATCH (switch on/off, edit details) via the routes below.
-const canManageEntities = requireRole('admin', 'control_center');
+// control_center/super_admin. field_staff can still PATCH (switch on/off, edit details) via the
+// routes below. super_admin has every capability admin has (plus the exclusive network-replace
+// import feature — see network.routes.js), so it's added alongside admin everywhere admin appears.
+const canManageEntities = requireRole('admin', 'control_center', 'super_admin');
 
 const COLUMN_BY_FIELD = {
   state: 'state', name: 'name', kv: 'kv', location: 'location', poc: 'poc',

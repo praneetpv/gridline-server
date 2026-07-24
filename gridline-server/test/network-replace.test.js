@@ -1,9 +1,11 @@
 // Verifies POST /api/network/replace — the "Import Excel, then Save" wholesale wipe-and-replace
-// used by Realtime view. Covers: admin-only gating, rejecting an empty/missing feeders array
-// (refuses to wipe the DB for a bad payload), a full replace correctly resolving the client's local
-// ids into real relationships (feeder -> node -> line -> transformer/interlink), the old network
-// actually being gone afterward, the single consolidated audit_log row, and the sections table
-// ending up with exactly the one new section. Run with: node test/network-replace.test.js
+// used by Realtime view. Covers: super_admin-only gating (rejecting control_center AND plain
+// admin — this is the one route in the whole API that admin does NOT have access to), rejecting an
+// empty/missing feeders array (refuses to wipe the DB for a bad payload), a full replace correctly
+// resolving the client's local ids into real relationships (feeder -> node -> line ->
+// transformer/interlink), the old network actually being gone afterward, the single consolidated
+// audit_log row, and the sections table ending up with exactly the one new section. Run with:
+// node test/network-replace.test.js
 process.env.JWT_SECRET = 'network-replace-test-secret';
 process.env.PORT = '0';
 process.env.CORS_ORIGIN = '*';
@@ -47,6 +49,10 @@ async function main() {
     `insert into users (name, email, password_hash, role) values ($1,$2,$3,'control_center')`,
     ['Control Center', 'control@example.com', passwordHash]
   );
+  await pool.query(
+    `insert into users (name, email, password_hash, role) values ($1,$2,$3,'super_admin')`,
+    ['KSEB Super Admin', 'super@example.com', passwordHash]
+  );
 
   const { server } = require('../src/index');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -68,7 +74,10 @@ async function main() {
   const adminToken = adminLogin.body.token;
   const controlLogin = await api('POST', '/api/auth/login', { email: 'control@example.com', password: 'testpass123' });
   const controlToken = controlLogin.body.token;
-  console.log('[network-replace] logged in as admin + control_center');
+  const superLogin = await api('POST', '/api/auth/login', { email: 'super@example.com', password: 'testpass123' });
+  assert.strictEqual(superLogin.status, 200, JSON.stringify(superLogin.body));
+  const superToken = superLogin.body.token;
+  console.log('[network-replace] logged in as admin + control_center + super_admin');
 
   // --- seed an "old" network directly through the normal per-entity API, to prove it gets wiped ---
   const oldFeeder = await api('POST', '/api/feeders', { name: 'OldFeeder', state: 'On' }, adminToken);
@@ -82,17 +91,23 @@ async function main() {
   }, adminToken);
   console.log('[network-replace] seeded an old network (1 feeder, 2 nodes, 1 line)');
 
-  // --- 1. control_center must be rejected (admin-only, unlike every other create/delete route) ---
-  const rejected = await api('POST', '/api/network/replace', {
+  // --- 1. control_center AND plain admin must both be rejected — this is the one route in the API
+  //     where admin does not suffice; only super_admin may call it. ---
+  const rejectedControl = await api('POST', '/api/network/replace', {
     feeders: [{ id: 'f1', name: 'ShouldNotLand' }],
   }, controlToken);
-  assert.strictEqual(rejected.status, 403, `expected 403 for control_center, got ${rejected.status}: ${JSON.stringify(rejected.body)}`);
-  console.log('[network-replace] control_center -> 403 OK (admin-only)');
+  assert.strictEqual(rejectedControl.status, 403, `expected 403 for control_center, got ${rejectedControl.status}: ${JSON.stringify(rejectedControl.body)}`);
+  console.log('[network-replace] control_center -> 403 OK (super_admin-only)');
+  const rejectedAdmin = await api('POST', '/api/network/replace', {
+    feeders: [{ id: 'f1', name: 'ShouldNotLand' }],
+  }, adminToken);
+  assert.strictEqual(rejectedAdmin.status, 403, `expected 403 for plain admin, got ${rejectedAdmin.status}: ${JSON.stringify(rejectedAdmin.body)}`);
+  console.log('[network-replace] admin -> 403 OK (super_admin-only — admin alone is not enough here)');
 
   // --- 2. empty/missing feeders array must be rejected, not silently wipe the DB ---
-  const emptyPayload = await api('POST', '/api/network/replace', { feeders: [] }, adminToken);
+  const emptyPayload = await api('POST', '/api/network/replace', { feeders: [] }, superToken);
   assert.strictEqual(emptyPayload.status, 400, `expected 400 for empty feeders, got ${emptyPayload.status}`);
-  const missingPayload = await api('POST', '/api/network/replace', {}, adminToken);
+  const missingPayload = await api('POST', '/api/network/replace', {}, superToken);
   assert.strictEqual(missingPayload.status, 400, 'missing feeders array should also 400');
   const stillThere = await api('GET', '/api/network', null, adminToken);
   assert.strictEqual(stillThere.body.feeders.length, 1, 'old feeder must still exist after a rejected empty/invalid replace');
@@ -127,7 +142,7 @@ async function main() {
       { id: 'interlink1', name: 'INTERLINK1', nodeAId: 'ab1', nodeBId: 'ab2', breakerType: 'AB', switchable: true, switchState: 'NO' },
     ],
   };
-  const replaced = await api('POST', '/api/network/replace', payload, adminToken);
+  const replaced = await api('POST', '/api/network/replace', payload, superToken);
   assert.strictEqual(replaced.status, 200, JSON.stringify(replaced.body));
   console.log('[network-replace] full replace request accepted (200)');
 
@@ -182,14 +197,14 @@ async function main() {
   assert.strictEqual(networkRow.old_value.feeders, 1, 'old_value should record the pre-replace feeder count');
   assert.strictEqual(networkRow.new_value.feeders, 2, 'new_value should record the post-replace feeder count');
   assert.strictEqual(networkRow.new_value.interlinks, 1);
-  assert.strictEqual(networkRow.performed_by_name, 'KSEB Admin');
+  assert.strictEqual(networkRow.performed_by_name, 'KSEB Super Admin');
   console.log('[network-replace] single consolidated audit_log row correct (label, old/new counts, performer)');
 
   // --- 8. a second replace with no sectionName still works (feeders get section_id null, and the
   //     old section row from the previous replace is cleared rather than left orphaned) ---
   const secondReplace = await api('POST', '/api/network/replace', {
     feeders: [{ id: 'x1', name: 'NoSectionFeeder', state: 'On' }],
-  }, adminToken);
+  }, superToken);
   assert.strictEqual(secondReplace.status, 200, JSON.stringify(secondReplace.body));
   assert.strictEqual(secondReplace.body.sections.length, 0, 'no sectionName provided -> no section row created, and the old one is cleared');
   assert.strictEqual(secondReplace.body.feeders.length, 1);

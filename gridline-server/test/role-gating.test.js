@@ -1,6 +1,10 @@
 // Verifies the server-side role enforcement added on top of the client-side UI hiding: field_staff
 // must be rejected (403) from creating/deleting any entity, but must still be able to PATCH
-// (toggle a switch, edit details) — while control_center (and admin) keep full create/delete access.
+// (toggle a switch, edit details) — while control_center/admin/super_admin all keep full
+// create/delete access to entities. super_admin additionally gets exclusive access to POST
+// /api/network/replace (the Import-Excel-then-Save wipe-and-replace feature), which is covered in
+// more depth in network-replace.test.js — this file just confirms plain admin does NOT have that
+// one exclusive route, and super_admin has ordinary entity CRUD like admin/control_center.
 // Same pg-mem harness as test/smoke.test.js. Run with: node test/role-gating.test.js
 process.env.JWT_SECRET = 'role-gating-test-secret';
 process.env.PORT = '0';
@@ -47,7 +51,8 @@ async function main() {
   await seedUser('Smoke Admin', 'admin@example.com', 'admin');
   await seedUser('Smoke Field Staff', 'field@example.com', 'field_staff');
   await seedUser('Smoke Control Center', 'control@example.com', 'control_center');
-  console.log('[role-gating] seeded admin/field_staff/control_center users');
+  await seedUser('Smoke Super Admin', 'super@example.com', 'super_admin');
+  console.log('[role-gating] seeded admin/field_staff/control_center/super_admin users');
 
   const { server } = require('../src/index');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -73,7 +78,8 @@ async function main() {
   const adminToken = await login('admin@example.com');
   const fieldToken = await login('field@example.com');
   const controlToken = await login('control@example.com');
-  console.log('[role-gating] logged in as all three roles');
+  const superToken = await login('super@example.com');
+  console.log('[role-gating] logged in as all four roles');
 
   const feeder = await api('POST', '/api/feeders', { name: 'F1', kv: 11, state: 'On' }, adminToken);
   assert.strictEqual(feeder.status, 201, JSON.stringify(feeder.body));
@@ -118,6 +124,24 @@ async function main() {
   const noAuth = await api('POST', '/api/feeders', { name: 'F4' }, null);
   assert.strictEqual(noAuth.status, 401, `expected 401, got ${noAuth.status}`);
   console.log('[role-gating] no token -> 401 OK (role check never overrides auth check)');
+
+  // super_admin has every ordinary entity-management capability admin/control_center have...
+  const superCreate = await api('POST', '/api/feeders', { name: 'F5', state: 'On' }, superToken);
+  assert.strictEqual(superCreate.status, 201, `expected 201, got ${superCreate.status}: ${JSON.stringify(superCreate.body)}`);
+  const superDelete = await api('DELETE', `/api/feeders/${superCreate.body.id}`, null, superToken);
+  assert.strictEqual(superDelete.status, 204, `expected 204, got ${superDelete.status}`);
+  console.log('[role-gating] super_admin POST/DELETE /api/feeders -> 201/204 OK (same as admin/control_center)');
+
+  // ...PLUS the one route plain admin/control_center do NOT have: network replace. Full coverage of
+  // that route (payload handling, id resolution, audit row, etc.) lives in network-replace.test.js —
+  // this is just the cross-role-boundary check that belongs here alongside the others.
+  const superReplace = await api('POST', '/api/network/replace', { feeders: [{ id: 'f1', name: 'ReplacedBySuperAdmin' }] }, superToken);
+  assert.strictEqual(superReplace.status, 200, `expected 200, got ${superReplace.status}: ${JSON.stringify(superReplace.body)}`);
+  const adminReplace = await api('POST', '/api/network/replace', { feeders: [{ id: 'f1', name: 'ShouldBeRejected' }] }, adminToken);
+  assert.strictEqual(adminReplace.status, 403, `expected 403 for plain admin, got ${adminReplace.status}`);
+  const controlReplace = await api('POST', '/api/network/replace', { feeders: [{ id: 'f1', name: 'ShouldBeRejected' }] }, controlToken);
+  assert.strictEqual(controlReplace.status, 403, `expected 403 for control_center, got ${controlReplace.status}`);
+  console.log('[role-gating] POST /api/network/replace: super_admin -> 200, admin -> 403, control_center -> 403');
 
   server.close();
   console.log('\n[role-gating] ALL CHECKS PASSED');

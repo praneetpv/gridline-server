@@ -778,9 +778,16 @@
   // field_staff: no provision to create or delete network entities — they operate existing
   // switches/breakers in the field, they don't build or tear down the topology.
   function isFieldStaff(){ return currentRole() === 'field_staff'; }
-  // Anyone who isn't admin gets the simplified toolbar (no Import/Export Excel, no Print, no
-  // Simulator, legend starts collapsed) — admin is the only role that needs those.
-  function isNonAdminRole(){ const r = currentRole(); return !!r && r !== 'admin'; }
+  // super_admin has every capability admin has, plus the exclusive Import Excel / network-replace
+  // feature below (see isSuperAdmin) — so it counts as "admin-like" for this general toolbar gate
+  // (Export/Print/Simulator tab/legend default), same as admin always has.
+  // Anyone who isn't admin or super_admin gets the simplified toolbar (no Import/Export Excel, no
+  // Print, no Simulator, legend starts collapsed).
+  function isNonAdminRole(){ const r = currentRole(); return !!r && r !== 'admin' && r !== 'super_admin'; }
+  // Import Excel (and the Save button that publishes an import to the live Realtime network) is
+  // restricted to this one role only — not even plain admin — see applyRoleUI and
+  // network.routes.js's POST /replace on the backend, which independently enforces the same thing.
+  function isSuperAdmin(){ return currentRole() === 'super_admin'; }
 
   const backend = {
     token: null,
@@ -2666,29 +2673,32 @@
   // a manual expand the user does later in the same session.
   let legendDefaultApplied = false;
 
-  // Role-gated chrome: admin gets the full toolbar; any other logged-in role gets a simplified one
-  // (no Import/Export Excel, no Print, no Simulator, legend starts collapsed). field_staff
+  // Role-gated chrome: admin/super_admin get the full toolbar; any other logged-in role gets a
+  // simplified one (no Export Excel, no Print, no Simulator, legend starts collapsed). field_staff
   // additionally loses every add/delete-entity control — they operate existing switches in the
-  // field, they don't build or tear down the topology. This is purely a UI convenience for most of
-  // the buttons below; the backend isn't gated by role beyond what already exists there, so treat
-  // most of this as a workflow simplification, not a security boundary. The one exception is Save
-  // in Realtime view (see saveCurrentViewToExcel/showReplaceNetworkWarning below): that action wipes
-  // and replaces the ENTIRE live network, and the server independently enforces admin-only on it
-  // (POST /api/network/replace) regardless of what this function shows or hides.
+  // field, they don't build or tear down the topology. Import Excel (and the Save button that
+  // publishes an import to the live Realtime network) is narrower still: super_admin only, not even
+  // plain admin — see isSuperAdmin. This is purely a UI convenience for most of the buttons below;
+  // the backend isn't gated by role beyond what already exists there, so treat most of this as a
+  // workflow simplification, not a security boundary. The one exception is Import/Save in Realtime
+  // view (see the import-excel-input handler and saveCurrentViewToExcel/showReplaceNetworkWarning
+  // below): that action wipes and replaces the ENTIRE live network, and the server independently
+  // enforces super_admin-only on it (POST /api/network/replace) regardless of what this function
+  // shows or hides.
   function applyRoleUI(){
     const nonAdmin = isNonAdminRole();
     const fieldStaff = isFieldStaff();
+    const superAdmin = isSuperAdmin();
 
     const importBtn = document.getElementById('import-excel-btn');
     const exportBtn = document.getElementById('export-excel-btn');
     const printBtn = document.getElementById('print-btn');
     const simTab = document.getElementById('tab-simulator');
     const saveBtn = document.getElementById('save-excel-btn');
-    // Import Excel now has a real function in both views: Simulator (build/edit a what-if network
-    // from a workbook, as always) and Realtime (preview an imported network, then Save to publish it
-    // as the live network — see below). Both are gated the same as Export/Print/Simulator: visible
-    // for admin, hidden for everyone else.
-    if(importBtn) importBtn.style.display = nonAdmin ? 'none' : '';
+    // Import Excel is the exclusive province of super_admin — building a network from a workbook
+    // (Simulator) or publishing one as the live network (Realtime, via Save below) is restricted to
+    // this one role, not just "admin and above" like the rest of the toolbar.
+    if(importBtn) importBtn.style.display = superAdmin ? '' : 'none';
     if(exportBtn) exportBtn.style.display = nonAdmin ? 'none' : '';
     if(printBtn) printBtn.style.display = nonAdmin ? 'none' : '';
     if(simTab) simTab.style.display = nonAdmin ? 'none' : '';
@@ -2696,8 +2706,8 @@
     // Excel already covers (a plain point-in-time download) — Simulator now only offers Export, per
     // "after simulation we should only allow export in the same format as the imported file". In
     // Realtime it means something else entirely (publish an imported network to the shared
-    // database), so it's admin-only there too.
-    if(saveBtn) saveBtn.style.display = (activeView === 'simulator' || nonAdmin) ? 'none' : '';
+    // database), so — like Import Excel — it's super_admin-only there too.
+    if(saveBtn) saveBtn.style.display = (activeView === 'simulator' || !superAdmin) ? 'none' : '';
 
     ['add-feeder-form', 'section-add-line', 'section-add-interlink', 'section-add-linetx'].forEach(id=>{
       const el = document.getElementById(id);
@@ -4158,13 +4168,13 @@
     const file = e.target.files[0];
     e.target.value = ''; // allow re-selecting the same file later
     if(!file) return;
-    if(activeView === 'realtime' && currentRole() !== 'admin'){
-      // Belt-and-braces: the Import Excel button itself is already hidden in Realtime for
-      // non-admin (see applyRoleUI), and the actual destructive action — POST /api/network/replace
-      // — independently requires admin on the server regardless of what the client shows. This just
-      // keeps the input's own change handler consistent with that, in case it's ever reached another
-      // way (e.g. a stale page that hasn't re-applied role UI yet).
-      showImportStatus('Only an admin can import a network into Realtime view.', true);
+    if(!isSuperAdmin()){
+      // Belt-and-braces: the Import Excel button itself is already hidden for everyone except
+      // super_admin (see applyRoleUI), and in Realtime the actual destructive action — POST
+      // /api/network/replace — independently requires super_admin on the server regardless of what
+      // the client shows. This just keeps the input's own change handler consistent with that, in
+      // case it's ever reached another way (e.g. a stale page that hasn't re-applied role UI yet).
+      showImportStatus('Only a super admin can import a network from Excel.', true);
       return;
     }
     try{
@@ -4309,8 +4319,8 @@
   // database, wiping and replacing whatever is currently live. Simulator no longer shows this button
   // at all (see applyRoleUI) — "after simulation we should only allow export in the same format as
   // the imported file", which Export Excel already does. Every other case here (no pending import,
-  // or somehow reached by a non-admin) is a harmless no-op with an explanatory message, matching how
-  // this button always behaved before this feature existed.
+  // or somehow reached by a role other than super_admin) is a harmless no-op with an explanatory
+  // message, matching how this button always behaved before this feature existed.
   async function saveCurrentViewToExcel(){
     if(activeView !== 'realtime'){
       return; // button is hidden in Simulator; nothing to do if this is ever reached anyway
@@ -4319,10 +4329,11 @@
       showImportStatus('Realtime changes save automatically to the database as you make them — nothing to save here. Import Excel first if you want to replace the whole network.', false);
       return;
     }
-    if(currentRole() !== 'admin'){
+    if(!isSuperAdmin()){
       // Mirrors the same belt-and-braces check in the import handler — the button is already
-      // hidden for non-admin, and the server independently requires admin on the actual endpoint.
-      showImportStatus('Only an admin can publish an imported network to Realtime view.', true);
+      // hidden for anyone but super_admin, and the server independently requires super_admin on
+      // the actual endpoint.
+      showImportStatus('Only a super admin can publish an imported network to Realtime view.', true);
       return;
     }
     const proceed = await showReplaceNetworkWarning(state.sectionName);

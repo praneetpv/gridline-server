@@ -11,8 +11,9 @@ function via(req) {
 }
 
 // Creating or deleting a transformer changes the network topology itself — restricted to admin/
-// control_center. field_staff can still PATCH (capacity/pole/load-reading/fault-history) below.
-const canManageEntities = requireRole('admin', 'control_center');
+// control_center/super_admin. field_staff can still PATCH (capacity/pole/load-reading/
+// fault-history) below.
+const canManageEntities = requireRole('admin', 'control_center', 'super_admin');
 
 router.post('/', canManageEntities, async (req, res) => {
   const {

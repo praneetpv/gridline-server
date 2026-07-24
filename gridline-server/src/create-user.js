@@ -2,7 +2,7 @@
 // (see README "no signup endpoint by design"). Run inside the backend container, e.g.:
 //   docker compose exec backend node src/create-user.js "Control Room" control@utility.example a-real-password admin
 //
-// Roles: field_staff | control_center | admin
+// Roles: field_staff | control_center | admin | super_admin
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { pool } = require('./db');
@@ -11,11 +11,11 @@ async function main() {
   const [name, email, password, role = 'control_center'] = process.argv.slice(2);
   if (!name || !email || !password) {
     console.error('Usage: node src/create-user.js "<name>" <email> <password> [role]');
-    console.error('Roles: field_staff | control_center | admin (default: control_center)');
+    console.error('Roles: field_staff | control_center | admin | super_admin (default: control_center)');
     process.exit(1);
   }
-  if (!['field_staff', 'control_center', 'admin'].includes(role)) {
-    console.error(`Invalid role "${role}". Must be one of: field_staff, control_center, admin`);
+  if (!['field_staff', 'control_center', 'admin', 'super_admin'].includes(role)) {
+    console.error(`Invalid role "${role}". Must be one of: field_staff, control_center, admin, super_admin`);
     process.exit(1);
   }
 

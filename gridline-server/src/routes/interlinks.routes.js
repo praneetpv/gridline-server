@@ -17,8 +17,9 @@ function via(req) {
 }
 
 // Creating or deleting a ring interlink changes the network topology itself — restricted to
-// admin/control_center. field_staff can still PATCH (open/close a switchable interlink) below.
-const canManageEntities = requireRole('admin', 'control_center');
+// admin/control_center/super_admin. field_staff can still PATCH (open/close a switchable
+// interlink) below.
+const canManageEntities = requireRole('admin', 'control_center', 'super_admin');
 
 router.post('/', canManageEntities, async (req, res) => {
   const { name, nodeAId, nodeBId, breakerType, switchable, switchState } = req.body || {};

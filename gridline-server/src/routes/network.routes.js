@@ -40,10 +40,11 @@ router.get('/', async (req, res) => {
 // with whatever was just imported client-side (see gridline.html's buildStateFromWorkbookData —
 // the exact same parser Simulator already uses, so one Excel template works for both views). This
 // is by a wide margin the most destructive endpoint in the API — every existing feeder/node/line/
-// transformer/interlink is gone the instant this commits, which is why it's gated to admin only
-// (every other create/delete route also allows control_center; this one deliberately doesn't) and
-// why the client shows an explicit "this will remove existing data" confirmation before ever
-// calling it (see the client's showReplaceNetworkWarning).
+// transformer/interlink is gone the instant this commits, which is why it's gated to super_admin
+// only — not even plain admin, and not control_center (every other create/delete route allows
+// admin + control_center + super_admin; this one is deliberately the narrowest gate in the whole
+// API) — and why the client shows an explicit "this will remove existing data" confirmation before
+// ever calling it (see the client's showReplaceNetworkWarning).
 //
 // The payload carries the client's own locally-generated ids (e.g. "f1", "n3" — see addFeederRaw
 // et al. in gridline.html) so it can describe relationships (a node's feederId, a line's
@@ -52,7 +53,7 @@ router.get('/', async (req, res) => {
 // interlinks) inside one transaction, so the whole replace either fully lands or fully rolls back —
 // there's no partially-imported network possible even if something in the file is malformed partway
 // through.
-router.post('/replace', requireRole('admin'), async (req, res) => {
+router.post('/replace', requireRole('super_admin'), async (req, res) => {
   const { sectionName, sectionDetails, feeders, nodes, lines, transformers, interlinks } = req.body || {};
   if (!Array.isArray(feeders) || feeders.length === 0) {
     return res.status(400).json({ error: 'feeders is required and must be a non-empty array' });

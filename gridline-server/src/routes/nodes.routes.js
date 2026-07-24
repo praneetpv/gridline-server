@@ -13,8 +13,9 @@ function via(req) {
 }
 
 // Creating or deleting a node changes the network topology itself — restricted to admin/
-// control_center. field_staff can still PATCH (open/close an AB/RMU switch, rename) below.
-const canManageEntities = requireRole('admin', 'control_center');
+// control_center/super_admin. field_staff can still PATCH (open/close an AB/RMU switch, rename)
+// below.
+const canManageEntities = requireRole('admin', 'control_center', 'super_admin');
 
 router.post('/', canManageEntities, async (req, res) => {
   const { feederId, kind, breakerType, label, state } = req.body || {};
