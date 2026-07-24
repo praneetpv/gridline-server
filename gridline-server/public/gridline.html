@@ -3851,6 +3851,17 @@
   toggleSidebarBtn.addEventListener('click', ()=>{
     setSidebarCollapsed(!document.getElementById('app').classList.contains('sidebar-collapsed'));
   });
+  // Double-clicking this button while already in full screen starts the same wallboard rotation
+  // mode as Ctrl+R (see below) — a mouse-only shortcut for anyone at the display who'd rather not
+  // reach for the keyboard. A double-click fires two ordinary 'click' events first (each one
+  // toggling sidebar-collapsed, so they cancel out and leave the sidebar state unchanged) and then
+  // this 'dblclick' event, so by the time this handler runs, "already in full screen" reflects
+  // whatever it was before the double-click — exactly like checking it on a Ctrl+R keypress.
+  // startFeederRotation() itself is a no-op if rotation is already running, so double-clicking again
+  // mid-rotation is harmless; Esc remains the only way to stop it, same as with Ctrl+R.
+  toggleSidebarBtn.addEventListener('dblclick', ()=>{
+    if(document.getElementById('app').classList.contains('sidebar-collapsed')) startFeederRotation();
+  });
 
   // ---------- feeder auto-rotation presentation mode (Ctrl+R while in full screen) ----------
   // A kiosk/wallboard mode for a control-center display: while in full screen (sidebar hidden),
