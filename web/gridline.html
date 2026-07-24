@@ -693,6 +693,20 @@
 </div>
 
 <script>
+// Registers the GridWatch service worker (see ./sw.js) as early as possible. This is required for
+// Chrome's "Add to Home Screen"/"Install app" prompt to appear on Android at all — a web app
+// manifest with icons alone (see the <link rel="manifest"> in <head>) is NOT enough by itself;
+// Chrome's installability check also requires a registered service worker with a fetch handler,
+// even a trivial pass-through one like ours. Without this, the install option simply never shows
+// up, regardless of how correct the manifest/icons are. iOS Safari has no such requirement (it has
+// no automatic install prompt at all — only the manual Share -> Add to Home Screen flow), so this
+// is purely an Android/Chrome concern, but registering it is harmless everywhere else.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('/sw.js').catch(()=>{}); // best-effort; app works fine without it
+  });
+}
+
 (function(){
   const SVGNS = "http://www.w3.org/2000/svg";
   const svg = document.getElementById('diagram');
