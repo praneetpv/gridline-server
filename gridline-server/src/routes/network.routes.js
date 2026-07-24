@@ -217,4 +217,65 @@ router.post('/replace', requireRole('super_admin'), async (req, res) => {
   }
 });
 
+// PATCH /api/network/section — lightweight edit of just the section's name/details (e.g. control-
+// room phone numbers, circle/division labels) without touching any feeder/node/line/transformer/
+// interlink. Deliberately separate from the wholesale POST /replace above: that route wipes and
+// rebuilds the entire network from an Excel import and is gated to super_admin only; this one only
+// ever updates (or, if none exists yet, creates) the single sections row already implied by GET
+// /api/network's `sections[0]` convention, and carries none of that route's destructive risk — so
+// it's open to admin/control_center/super_admin, same as ordinary entity management everywhere else.
+router.patch('/section', requireRole('admin', 'control_center', 'super_admin'), async (req, res) => {
+  const { sectionName, sectionDetails } = req.body || {};
+  const trimmedName = (sectionName || '').trim();
+  if (!trimmedName) return res.status(400).json({ error: 'sectionName is required' });
+  const detailsObj = Array.isArray(sectionDetails)
+    ? Object.fromEntries(sectionDetails.filter((d) => d && d.label).map((d) => [d.label, d.value]))
+    : {};
+
+  // Same "exactly one section row" convention GET /api/network and POST /replace already rely on
+  // (`order by name` to surface it) — update it in place if it exists, otherwise create it, so this
+  // route works whether or not a network has been imported yet.
+  const existing = await pool.query('select * from sections order by name limit 1');
+  const before = existing.rows[0] || null;
+
+  let sectionRow;
+  if (before) {
+    const { rows } = await pool.query(
+      'update sections set name = $1, details = $2 where id = $3 returning *',
+      [trimmedName, JSON.stringify(detailsObj), before.id]
+    );
+    sectionRow = rows[0];
+  } else {
+    const { rows } = await pool.query(
+      'insert into sections (name, details) values ($1, $2) returning *',
+      [trimmedName, JSON.stringify(detailsObj)]
+    );
+    sectionRow = rows[0];
+  }
+
+  // Reuses entity_type='feeder' with a distinctive field_changed sentinel — same pattern the
+  // network-replace audit row above uses — rather than adding 'section' as a new entity_type value,
+  // which would mean touching audit_log's entity_type CHECK constraint (see migration 003's
+  // reasoning for why that was avoided) just for this one lightweight action.
+  const audit = await recordChange(pool, {
+    entityType: 'feeder', entityId: '00000000-0000-0000-0000-000000000000',
+    action: 'update', fieldChanged: '__section_update__',
+    entityLabel: trimmedName,
+    oldValue: before ? { name: before.name, details: before.details } : null,
+    newValue: { name: sectionRow.name, details: sectionRow.details },
+    performedBy: req.user.id, performedVia: via(req),
+  });
+
+  broadcastEvent({
+    type: 'section.updated',
+    entityLabel: audit.entity_label,
+    section: { name: sectionRow.name, details: sectionRow.details },
+    performedBy: { id: req.user.id, name: req.user.name, role: req.user.role },
+    performedVia: via(req),
+    performedAt: audit.performed_at,
+  });
+
+  res.json({ name: sectionRow.name, details: sectionRow.details });
+});
+
 module.exports = router;

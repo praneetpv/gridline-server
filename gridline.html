@@ -642,7 +642,10 @@
 
     <div id="main">
       <div id="section-heading" style="display:none;" title="Click to collapse or expand">
-        <span id="section-heading-text"></span>
+        <span id="section-heading-textwrap" style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span id="section-heading-text"></span>
+          <button type="button" id="section-heading-edit-btn" class="btn-ghost" style="display:none;padding:2px 8px;font-size:11px;flex-shrink:0;" title="Edit section name and hover details">✎ Edit</button>
+        </span>
         <span class="chev" id="section-heading-chev">▾ collapse</span>
       </div>
       <div id="canvas-wrap">
@@ -937,6 +940,20 @@ if('serviceWorker' in navigator){
       return;
     }
 
+    // Another user just saved the section name/hover-details edit (PATCH /api/network/section) —
+    // the event carries the full updated section object, so just re-map it in place rather than a
+    // full resync; nothing else in the network is affected by this route.
+    if(evt.type === 'section.updated'){
+      if(evt.section){
+        state.sectionName = evt.section.name || '';
+        const details = evt.section.details || {};
+        state.sectionDetails = Object.entries(details).map(([label, value])=>({label, value}));
+        renderSectionHeading();
+        positionZoomControls();
+      }
+      return;
+    }
+
     const entityType = evt.type.split('.')[0];
     const isDelete = evt.type.endsWith('.deleted');
     const isCreate = evt.type.endsWith('.created');
@@ -1104,6 +1121,11 @@ if('serviceWorker' in navigator){
       const counts = ['feeders','nodes','lines','transformers','interlinks']
         .map(k => `${n[k] != null ? n[k] : 0} ${k}`).join(', ');
       return `${label} network replaced (${counts})`;
+    }
+    // Same reused-entity_type='feeder' sentinel pattern as __network_replace__ above, but for the
+    // much lighter PATCH /api/network/section edit (section name + hover-detail rows only).
+    if(row.field_changed === '__section_update__'){
+      return `${label} section details updated`;
     }
     if(row.action === 'create') return `${label} added`;
     if(row.action === 'delete') return `${label} removed`;
@@ -2875,6 +2897,114 @@ if('serviceWorker' in navigator){
     };
   }
 
+  // Edits state.sectionName / state.sectionDetails — the section heading's name and its hover
+  // tooltip (label/value rows, e.g. "Control Room Phone: 0480-xxxxxxx"). Reuses the same generic
+  // #feeder-modal-backdrop/#feeder-modal pair every other modal in this file uses rather than a
+  // dedicated backdrop element. In Realtime this calls PATCH /api/network/section (see
+  // network.routes.js — open to admin/control_center/super_admin, not just super_admin, since this
+  // carries none of the destructive risk Import/Save's network replace does); in Simulator it just
+  // updates local state and saveState() like every other Simulator-only edit.
+  function openSectionDetailsModal(){
+    const backdrop = document.getElementById('feeder-modal-backdrop');
+    const modal = document.getElementById('feeder-modal');
+    // Local working copy so Cancel (or closing the backdrop) never touches real state — only Save does.
+    let rows = (state.sectionDetails || []).map(d => ({ label: d.label, value: d.value }));
+
+    function rowsHtml(){
+      if(rows.length === 0){
+        return '<p class="empty-hint">No details yet — add one below (e.g. "Control Room Phone").</p>';
+      }
+      return rows.map((r, i) => `
+        <div class="section-detail-row" style="display:flex;gap:6px;margin-bottom:6px;" data-idx="${i}">
+          <input type="text" class="section-detail-label" placeholder="Label" value="${escapeAttr(r.label)}" style="flex:1;min-width:0;">
+          <input type="text" class="section-detail-value" placeholder="Value" value="${escapeAttr(r.value)}" style="flex:1;min-width:0;">
+          <button type="button" class="btn-danger section-detail-remove" data-idx="${i}" style="flex-shrink:0;">✕</button>
+        </div>
+      `).join('');
+    }
+
+    // Reads whatever's currently typed in every row's inputs back into `rows` before an add/remove
+    // click re-renders the list — otherwise in-progress edits to other rows would be lost.
+    function syncRowsFromDom(){
+      const rowEls = modal.querySelectorAll('.section-detail-row');
+      rows = Array.from(rowEls).map(el => ({
+        label: el.querySelector('.section-detail-label').value,
+        value: el.querySelector('.section-detail-value').value,
+      }));
+    }
+
+    function renderRows(){
+      document.getElementById('section-details-rows').innerHTML = rowsHtml();
+      modal.querySelectorAll('.section-detail-remove').forEach(btn=>{
+        btn.onclick = ()=>{
+          syncRowsFromDom();
+          rows.splice(Number(btn.dataset.idx), 1);
+          renderRows();
+        };
+      });
+    }
+
+    modal.innerHTML = `
+      <span class="close" id="section-modal-close">✕</span>
+      <h2>Edit section details</h2>
+      <p class="modal-sub">The name is shown as the heading above the diagram. Details below appear on hover over it — add a row per phone number or contact.</p>
+      <label>Section name</label>
+      <input type="text" id="edit-section-name" value="${escapeAttr(state.sectionName)}">
+      <label style="margin-top:10px;display:block;">Hover details</label>
+      <div id="section-details-rows"></div>
+      <button type="button" class="btn-ghost" id="section-detail-add-row" style="margin-top:4px;">+ Add detail</button>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="section-modal-cancel">Cancel</button>
+        <button class="btn-primary" style="margin-top:0;" id="section-modal-save">Save</button>
+      </div>
+    `;
+    renderRows();
+    backdrop.style.display = 'flex';
+    document.getElementById('section-modal-close').onclick = closeModal;
+    document.getElementById('section-modal-cancel').onclick = closeModal;
+    backdrop.onclick = (e)=>{ if(e.target === backdrop) closeModal(); };
+    document.getElementById('section-detail-add-row').onclick = ()=>{
+      syncRowsFromDom();
+      rows.push({ label:'', value:'' });
+      renderRows();
+    };
+    document.getElementById('section-modal-save').onclick = async ()=>{
+      syncRowsFromDom();
+      const newName = document.getElementById('edit-section-name').value.trim();
+      if(!newName){
+        alert('Section name cannot be empty.');
+        return;
+      }
+      const newDetails = rows
+        .map(r => ({ label: (r.label||'').trim(), value: (r.value||'').trim() }))
+        .filter(r => r.label && r.value);
+
+      if(activeView === 'realtime'){
+        try{
+          const updated = await backend.patch('/api/network/section', { sectionName: newName, sectionDetails: newDetails });
+          state.sectionName = updated.name || '';
+          const details = updated.details || {};
+          state.sectionDetails = Object.entries(details).map(([label, value])=>({label, value}));
+        }catch(e){
+          closeModal();
+          await handleRealtimeMutationError(e, 'the section details');
+          return;
+        }
+        closeModal();
+        renderSectionHeading();
+        positionZoomControls();
+        return;
+      }
+
+      state.sectionName = newName;
+      state.sectionDetails = newDetails;
+      await saveState();
+      closeModal();
+      renderSectionHeading();
+      positionZoomControls();
+    };
+  }
+
   function openTransformerModal(txId){
     const tx = state.transformers.find(t=>t.id===txId);
     if(!tx) return;
@@ -3243,6 +3373,7 @@ if('serviceWorker' in navigator){
     const el = document.getElementById('section-heading');
     const textEl = document.getElementById('section-heading-text');
     const chevEl = document.getElementById('section-heading-chev');
+    const editBtn = document.getElementById('section-heading-edit-btn');
     const name = (state.sectionName || '').trim();
     if(name){
       el.style.display = 'flex';
@@ -3254,10 +3385,15 @@ if('serviceWorker' in navigator){
       textEl.title = (!sectionHeadingCollapsed && details.length)
         ? details.map(d => `${d.label}: ${d.value}`).join('\n')
         : '';
+      // Editing (name + the hover detail rows, e.g. control-room phone numbers) is available to
+      // anyone who can already manage the network's entities — field_staff can view the hover but
+      // not change it, same boundary applyRoleUI() draws for the add-entity forms.
+      editBtn.style.display = isFieldStaff() ? 'none' : '';
     } else {
       textEl.textContent = '';
       textEl.title = '';
       el.style.display = 'none';
+      editBtn.style.display = 'none';
     }
   }
 
@@ -3595,6 +3731,13 @@ if('serviceWorker' in navigator){
     positionZoomControls();
     const inspector = document.getElementById('inspector');
     if(inspector.style.display === 'block') positionInspector(inspector);
+  });
+
+  // stopPropagation so clicking Edit doesn't also toggle the heading's collapse state via the
+  // listener just above (they share the same #section-heading click target).
+  document.getElementById('section-heading-edit-btn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    openSectionDetailsModal();
   });
 
   document.getElementById('tab-realtime').addEventListener('click', ()=>switchView('realtime'));
