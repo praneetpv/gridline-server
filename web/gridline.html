@@ -2901,9 +2901,8 @@ if('serviceWorker' in navigator){
   // tooltip (label/value rows, e.g. "Control Room Phone: 0480-xxxxxxx"). Reuses the same generic
   // #feeder-modal-backdrop/#feeder-modal pair every other modal in this file uses rather than a
   // dedicated backdrop element. In Realtime this calls PATCH /api/network/section (see
-  // network.routes.js — open to admin/control_center/super_admin, not just super_admin, since this
-  // carries none of the destructive risk Import/Save's network replace does); in Simulator it just
-  // updates local state and saveState() like every other Simulator-only edit.
+  // network.routes.js — super_admin-only, same gate as Import/Save's network replace); in Simulator
+  // it just updates local state and saveState() like every other Simulator-only edit.
   function openSectionDetailsModal(){
     const backdrop = document.getElementById('feeder-modal-backdrop');
     const modal = document.getElementById('feeder-modal');
@@ -3385,10 +3384,10 @@ if('serviceWorker' in navigator){
       textEl.title = (!sectionHeadingCollapsed && details.length)
         ? details.map(d => `${d.label}: ${d.value}`).join('\n')
         : '';
-      // Editing (name + the hover detail rows, e.g. control-room phone numbers) is available to
-      // anyone who can already manage the network's entities — field_staff can view the hover but
-      // not change it, same boundary applyRoleUI() draws for the add-entity forms.
-      editBtn.style.display = isFieldStaff() ? 'none' : '';
+      // Editing (name + the hover detail rows, e.g. control-room phone numbers) is restricted to
+      // super_admin only — same narrow gate the server enforces on PATCH /api/network/section —
+      // not the wider admin/control_center/super_admin circle ordinary entity management uses.
+      editBtn.style.display = isSuperAdmin() ? '' : 'none';
     } else {
       textEl.textContent = '';
       textEl.title = '';

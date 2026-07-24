@@ -220,11 +220,13 @@ router.post('/replace', requireRole('super_admin'), async (req, res) => {
 // PATCH /api/network/section — lightweight edit of just the section's name/details (e.g. control-
 // room phone numbers, circle/division labels) without touching any feeder/node/line/transformer/
 // interlink. Deliberately separate from the wholesale POST /replace above: that route wipes and
-// rebuilds the entire network from an Excel import and is gated to super_admin only; this one only
-// ever updates (or, if none exists yet, creates) the single sections row already implied by GET
-// /api/network's `sections[0]` convention, and carries none of that route's destructive risk — so
-// it's open to admin/control_center/super_admin, same as ordinary entity management everywhere else.
-router.patch('/section', requireRole('admin', 'control_center', 'super_admin'), async (req, res) => {
+// rebuilds the entire network from an Excel import; this one only ever updates (or, if none exists
+// yet, creates) the single sections row already implied by GET /api/network's `sections[0]`
+// convention. Despite carrying none of /replace's destructive risk, this is gated to super_admin
+// only (not admin/control_center) per an explicit request — section name/contact-detail edits are
+// kept in the same narrow hands as the network-replace feature, rather than the wider
+// admin/control_center/super_admin circle ordinary entity management uses.
+router.patch('/section', requireRole('super_admin'), async (req, res) => {
   const { sectionName, sectionDetails } = req.body || {};
   const trimmedName = (sectionName || '').trim();
   if (!trimmedName) return res.status(400).json({ error: 'sectionName is required' });
